@@ -6,7 +6,7 @@ locals {
 resource "aws_launch_template" "ubuntu_lt" {
   name_prefix   = "ubuntu-eks-node-"
   image_id      = local.ubuntu_ami
-  instance_type = var.node_instance_type
+  instance_type = var.node_instance_type # 在启动模板中指定实例类型
 
   user_data = base64encode(<<-EOT
     #!/bin/bash
@@ -36,8 +36,29 @@ resource "aws_launch_template" "ubuntu_lt" {
     }
   }
 
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name        = "eks-ubuntu-node"
+      Environment = var.environment
+      Project     = "eks-karpenter"
+    }
+  }
 
+  tag_specifications {
+    resource_type = "volume"
+    tags = {
+      Name        = "eks-ubuntu-node"
+      Environment = var.environment
+      Project     = "eks-karpenter"
+    }
+  }
 
+  tags = {
+    Environment = var.environment
+    Project     = "eks-karpenter"
+    ManagedBy   = "terraform"
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -50,6 +71,7 @@ resource "aws_eks_node_group" "initial_nodes" {
   node_role_arn   = aws_iam_role.eks_node_role.arn
   subnet_ids      = var.private_subnet_ids
 
+  # 使用启动模板
   launch_template {
     id      = aws_launch_template.ubuntu_lt.id
     version = aws_launch_template.ubuntu_lt.latest_version
@@ -61,7 +83,8 @@ resource "aws_eks_node_group" "initial_nodes" {
     max_size     = var.max_size
   }
 
-  instance_types = [var.node_instance_type]
+  # 移除 instance_types 参数，因为已经在启动模板中指定了
+  # instance_types = [var.node_instance_type]
 
   update_config {
     max_unavailable = 1
@@ -74,5 +97,10 @@ resource "aws_eks_node_group" "initial_nodes" {
     aws_iam_role_policy_attachment.ec2_container_registry_readonly
   ]
 
-
+  tags = {
+    Name        = "initial-ubuntu-node"
+    Environment = var.environment
+    Project     = "eks-karpenter"
+    ManagedBy   = "terraform"
+  }
 }
