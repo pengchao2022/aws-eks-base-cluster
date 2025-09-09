@@ -1,6 +1,7 @@
 region             = "us-east-1"
 cluster_name       = "dev-eks-cls-k"
 node_count         = 4
+node_ami           = "ami-0fc5d935ebf8bc3bc"
 node_instance_type = "t3.micro"
 vpc_id             = "vpc-0dd60e0efc5baa3af"
 private_subnet_ids = [
