@@ -1,7 +1,7 @@
 aws_account_id = "319998871902"
 region         = "us-east-1"
 environment    = "development"
-cluster_name   = "eks-fly-cluster"
+cluster_name   = "eks-fly-cls"
 vpc_id         = "vpc-0dd60e0efc5baa3af"
 private_subnet_ids = [
   "subnet-0db3ff0a8f70ef7d2",

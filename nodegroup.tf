@@ -6,23 +6,71 @@ locals {
 resource "aws_launch_template" "ubuntu_lt" {
   name_prefix   = "ubuntu-eks-node-"
   image_id      = local.ubuntu_ami
-  instance_type = var.node_instance_type # 在启动模板中指定实例类型
-
+  instance_type = var.node_instance_type
+  
+  # 使用正确的EKS bootstrap脚本
   user_data = base64encode(<<-EOT
-    #!/bin/bash
-    set -ex
-    apt-get update
-    apt-get install -y apt-transport-https ca-certificates curl gnupg
-    apt-get install -y awscli
-    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-    echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
-    apt-get update
-    apt-get install -y kubelet kubeadm kubectl
-    apt-mark hold kubelet kubeadm kubectl
-    echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.conf
-    echo 'net.bridge.bridge-nf-call-ip6tables=1' >> /etc/sysctl.conf
-    sysctl -p
-  EOT
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+--==BOUNDARY==
+Content-Type: text/x-shellscript; charset="us-ascii"
+
+#!/bin/bash
+set -ex
+
+# 设置EKS集群信息
+CLUSTER_NAME="${var.cluster_name}"
+API_SERVER_URL="${module.eks.cluster_endpoint}"
+B64_CLUSTER_CA="${module.eks.cluster_certificate_authority_data}"
+
+# 创建bootstrap配置目录
+mkdir -p /etc/eks/bootstrap
+
+# 安装必要的依赖
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+# 安装AWS CLI
+apt-get install -y awscli
+
+# 安装容器运行时（containerd）
+apt-get install -y containerd
+
+# 配置containerd
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
+systemctl restart containerd
+
+# 安装kubelet、kubeadm、kubectl
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
+apt-get update
+apt-get install -y kubelet=1.28.* kubeadm=1.28.* kubectl=1.28.*
+apt-mark hold kubelet kubeadm kubectl
+
+# 配置kubelet
+cat <<EOF > /etc/systemd/system/kubelet.service.d/10-eksclt.alias.conf
+[Service]
+Environment="KUBELET_EXTRA_ARGS=--node-ip=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4) --cloud-provider=aws"
+EOF
+
+# 设置系统参数
+echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.conf
+echo 'net.bridge.bridge-nf-call-ip6tables=1' >> /etc/sysctl.conf
+sysctl -p
+
+# 等待EKS控制平面就绪
+echo "等待EKS控制平面就绪..."
+sleep 30
+
+# 使用EKS引导脚本加入集群
+/etc/eks/bootstrap.sh ${var.cluster_name} \
+  --b64-cluster-ca ${module.eks.cluster_certificate_authority_data} \
+  --apiserver-endpoint ${module.eks.cluster_endpoint}
+
+--==BOUNDARY==--
+EOT
   )
 
   block_device_mappings {
@@ -74,7 +122,7 @@ resource "aws_eks_node_group" "initial_nodes" {
   # 使用启动模板
   launch_template {
     id      = aws_launch_template.ubuntu_lt.id
-    version = aws_launch_template.ubuntu_lt.latest_version
+    version = "$Latest"  # 使用最新版本
   }
 
   scaling_config {
@@ -83,18 +131,23 @@ resource "aws_eks_node_group" "initial_nodes" {
     max_size     = var.max_size
   }
 
-  # 移除 instance_types 参数，因为已经在启动模板中指定了
-  # instance_types = [var.node_instance_type]
-
   update_config {
     max_unavailable = 1
+  }
+
+  # 添加必要的标签选择器
+  labels = {
+    "node.kubernetes.io/instance-type" = var.node_instance_type
+    "environment" = var.environment
   }
 
   depends_on = [
     module.eks,
     aws_iam_role_policy_attachment.eks_worker_node_policy,
     aws_iam_role_policy_attachment.eks_cni_policy,
-    aws_iam_role_policy_attachment.ec2_container_registry_readonly
+    aws_iam_role_policy_attachment.ec2_container_registry_readonly,
+    # 等待VPC CNI就绪
+    kubernetes_config_map.aws_auth
   ]
 
   tags = {
@@ -103,4 +156,24 @@ resource "aws_eks_node_group" "initial_nodes" {
     Project     = "eks-karpenter"
     ManagedBy   = "terraform"
   }
+}
+
+# 确保AWS auth configmap存在
+resource "kubernetes_config_map" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    mapRoles = <<-EOT
+      - rolearn: ${aws_iam_role.eks_node_role.arn}
+        username: system:node:{{EC2PrivateDNSName}}
+        groups:
+          - system:bootstrappers
+          - system:nodes
+    EOT
+  }
+
+  depends_on = [module.eks]
 }
