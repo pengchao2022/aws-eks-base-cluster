@@ -1,16 +1,16 @@
-# 使用正确的Ubuntu EKS优化AMI查询
-data "aws_ami" "ubuntu_eks" {
+# 方法1：使用SSM参数获取最新的EKS优化Ubuntu AMI
+data "aws_ssm_parameter" "ubuntu_eks_ami" {
+  name = "/aws/service/canonical/ubuntu/eks/20.04/1.28/latest/amd64/hvm/ebs-gp2/ami-id"
+}
+
+# 方法2：备用方案 - 使用标准的Ubuntu 20.04 AMI
+data "aws_ami" "ubuntu_20_04" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical的官方Owner ID
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
-    values = ["ubuntu-eks/k8s_${replace(var.cluster_version, ".", "")}/*"]
-  }
-
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-20.04-amd64-server-*"]
   }
 
   filter {
@@ -22,42 +22,34 @@ data "aws_ami" "ubuntu_eks" {
     name   = "root-device-type"
     values = ["ebs"]
   }
-}
-
-# 如果上面的查询仍然失败，使用备用方案：最新的Ubuntu 22.04 AMI
-data "aws_ami" "ubuntu_backup" {
-  count = length(data.aws_ami.ubuntu_eks.id) > 0 ? 0 : 1
-
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
 
   filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-22.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    name   = "architecture"
+    values = ["x86_64"]
   }
 }
 
 # 选择可用的AMI
 locals {
-  node_ami = length(data.aws_ami.ubuntu_eks.id) > 0 ? data.aws_ami.ubuntu_eks.id : data.aws_ami.ubuntu_backup[0].id
+  node_ami = try(data.aws_ssm_parameter.ubuntu_eks_ami.value, data.aws_ami.ubuntu_20_04.id)
 }
 
 resource "aws_launch_template" "ubuntu_lt" {
   name_prefix   = "ubuntu-eks-node-"
   image_id      = local.node_ami
   instance_type = var.node_instance_type
+
+  # 添加用户数据以确保节点正确加入集群
   user_data = base64encode(<<-EOT
     #!/bin/bash
     set -ex
-    # 安装EKS需要的组件
+    # 等待cloud-init完成
+    cloud-init status --wait
+    # 安装必要的组件
     apt-get update
-    apt-get install -y apt-transport-https curl
-    # 这里可以添加其他必要的初始化脚本
+    apt-get install -y apt-transport-https ca-certificates curl
+    # 设置主机名
+    hostnamectl set-hostname $(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
   EOT
   )
 
@@ -90,6 +82,7 @@ resource "aws_launch_template" "ubuntu_lt" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [image_id]
   }
 }
 
@@ -111,11 +104,19 @@ resource "aws_eks_node_group" "initial_nodes" {
     max_size     = var.max_size
   }
 
-  # 确保使用正确的实例类型
+  # 实例类型
   instance_types = [var.node_instance_type]
 
+  # 更新配置
+  update_config {
+    max_unavailable = 1
+  }
+
   depends_on = [
-    module.eks
+    module.eks,
+    aws_iam_role_policy_attachment.eks_worker_node_policy,
+    aws_iam_role_policy_attachment.eks_cni_policy,
+    aws_iam_role_policy_attachment.ec2_container_registry_readonly
   ]
 
   tags = {
