@@ -7,53 +7,32 @@ module "eks" {
   vpc_id          = var.vpc_id
   subnet_ids      = var.private_subnet_ids
 
-  # 禁用所有插件，后续手动安装
-  cluster_addons = {}
-
-  # 禁用节点组
-  eks_managed_node_groups = {}
-  managed_node_groups     = {}
-
-  # 禁用加密
-  cluster_encryption_config = []
-
-  # 基本安全组规则
-  cluster_security_group_additional_rules = {
-    egress_all = {
-      description      = "Node all egress"
-      protocol         = "-1"
-      from_port        = 0
-      to_port          = 0
-      type             = "egress"
-      cidr_blocks      = ["0.0.0.0/0"]
-      ipv6_cidr_blocks = ["::/0"]
-    }
-  }
-
-  node_security_group_additional_rules = {
-    ingress_self_all = {
-      description = "Node to node all ports/protocols"
-      protocol    = "-1"
-      from_port   = 0
-      to_port     = 0
-      type        = "ingress"
-      self        = true
-    }
-    egress_all = {
-      description      = "Node all egress"
-      protocol         = "-1"
-      from_port        = 0
-      to_port          = 0
-      type             = "egress"
-      cidr_blocks      = ["0.0.0.0/0"]
-      ipv6_cidr_blocks = ["::/0"]
-    }
-  }
-
-  enable_irsa = true
+  # 最小化配置 - 只创建集群本身
+  cluster_addons                 = {}
+  eks_managed_node_groups        = {}
+  cluster_encryption_config      = []
+  cluster_endpoint_public_access = true
+  enable_irsa                    = true
 
   tags = {
     Environment = var.environment
     Project     = "eks-karpenter"
   }
+}
+
+# 为Karpenter添加必要的标签到子网
+resource "aws_ec2_tag" "karpenter_subnet_tags" {
+  for_each = toset(var.private_subnet_ids)
+
+  resource_id = each.value
+  key         = "karpenter.sh/discovery"
+  value       = var.cluster_name
+}
+
+resource "aws_ec2_tag" "karpenter_subnet_env_tags" {
+  for_each = toset(var.private_subnet_ids)
+
+  resource_id = each.value
+  key         = "Environment"
+  value       = var.environment
 }
