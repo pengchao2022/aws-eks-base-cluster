@@ -66,8 +66,11 @@ module "eks" {
   enable_irsa = true
 
   tags = {
-    Environment              = "production"
-    karpenter.sh / discovery = var.cluster_name
+    Environment = "production"
+  }
+
+  cluster_tags = {
+    "karpenter.sh/discovery" = var.cluster_name
   }
 }
 
