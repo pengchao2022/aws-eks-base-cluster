@@ -6,7 +6,7 @@ resource "aws_eks_node_group" "dev_nodes" {
   node_role_arn   = module.eks.cluster_iam_role_arn
   subnet_ids      = var.private_subnet_ids
 
-  ami_type       = "CUSTOM"
+  ami_type = "CUSTOM"
 
   launch_template {
     id      = aws_launch_template.dev_nodes.id
