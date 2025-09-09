@@ -13,9 +13,19 @@ output "cluster_security_group_id" {
   value       = module.eks.cluster_security_group_id
 }
 
-output "node_groups" {
-  description = "Map of node group details"
-  value       = aws_eks_node_group.python_dev_nodes[*].node_group_name
+output "node_group_name" {
+  description = "Node group name"
+  value       = aws_eks_node_group.python_dev_nodes.node_group_name
+}
+
+output "node_count" {
+  description = "Number of nodes in the node group"
+  value       = var.node_count
+}
+
+output "instance_names" {
+  description = "Expected EC2 instance names"
+  value       = [for i in range(1, var.node_count + 1) : "${var.cluster_name}-${i}"]
 }
 
 output "region" {
@@ -26,14 +36,4 @@ output "region" {
 output "cluster_certificate_authority_data" {
   description = "Base64 encoded certificate data required to communicate with the cluster"
   value       = module.eks.cluster_certificate_authority_data
-}
-
-output "vpc_id" {
-  description = "VPC ID used by the cluster"
-  value       = var.vpc_id
-}
-
-output "subnet_ids" {
-  description = "Subnet IDs used by the cluster"
-  value       = var.private_subnet_ids
 }

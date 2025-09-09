@@ -31,16 +31,36 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistry
   role       = aws_iam_role.node_group.name
 }
 
-# 创建启动模板来指定Ubuntu AMI
+# 创建启动模板来指定Ubuntu AMI，并通过用户数据设置主机名
 resource "aws_launch_template" "ubuntu_eks" {
   name_prefix   = "${var.cluster_name}-ubuntu-"
   image_id      = "ami-0c02fb55956c7d316" # Ubuntu 20.04 LTS us-east-1
   instance_type = var.instance_type
 
+  # 用户数据脚本，用于动态设置主机名
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    set -ex
+    
+    # 获取实例的私有IP最后一位作为序号
+    IP=$(hostname -I | awk '{print $1}')
+    SEQUENCE=$(echo $IP | awk -F. '{print $4}')
+    
+    # 设置主机名
+    hostnamectl set-hostname ${var.cluster_name}-$SEQUENCE
+    
+    # 更新/etc/hosts
+    echo "127.0.0.1 ${var.cluster_name}-$SEQUENCE" >> /etc/hosts
+    echo "$IP ${var.cluster_name}-$SEQUENCE" >> /etc/hosts
+    
+    # 确保EKS bootstrap脚本仍然执行
+    /etc/eks/bootstrap.sh ${var.cluster_name}
+  EOF
+  )
+
   tag_specifications {
     resource_type = "instance"
     tags = merge(var.tags, {
-      Name        = "${var.cluster_name}-ubuntu-node"
       Environment = "dev"
     })
   }
@@ -48,7 +68,6 @@ resource "aws_launch_template" "ubuntu_eks" {
   tag_specifications {
     resource_type = "volume"
     tags = merge(var.tags, {
-      Name        = "${var.cluster_name}-ubuntu-volume"
       Environment = "dev"
     })
   }
@@ -58,12 +77,10 @@ resource "aws_launch_template" "ubuntu_eks" {
   }
 }
 
-# 创建指定数量的节点
+# 创建单个Nodegroup，包含所有4个实例
 resource "aws_eks_node_group" "python_dev_nodes" {
-  count = var.node_count
-
   cluster_name    = module.eks.cluster_name
-  node_group_name = "python-dev-node${count.index + 1}"
+  node_group_name = "python-dev-nodegroup"
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = var.private_subnet_ids
 
@@ -74,9 +91,9 @@ resource "aws_eks_node_group" "python_dev_nodes" {
   }
 
   scaling_config {
-    desired_size = 1
-    max_size     = 1
-    min_size     = 1
+    desired_size = var.node_count
+    max_size     = var.node_count
+    min_size     = var.node_count
   }
 
   labels = {
@@ -85,7 +102,7 @@ resource "aws_eks_node_group" "python_dev_nodes" {
   }
 
   tags = merge(var.tags, {
-    Name        = "python-dev-node${count.index + 1}"
+    Name        = "python-dev-nodegroup"
     Environment = "dev"
   })
 
@@ -96,4 +113,13 @@ resource "aws_eks_node_group" "python_dev_nodes" {
     aws_iam_role_policy_attachment.node_group_AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.node_group_AmazonEC2ContainerRegistryReadOnly
   ]
+}
+
+# 创建EC2实例名称的null资源（用于输出）
+resource "null_resource" "instance_names" {
+  count = var.node_count
+
+  triggers = {
+    instance_name = "${var.cluster_name}-${count.index + 1}"
+  }
 }
