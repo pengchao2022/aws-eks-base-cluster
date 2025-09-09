@@ -7,10 +7,9 @@ module "eks" {
   vpc_id          = var.vpc_id
   subnet_ids      = var.private_subnet_ids
 
-  # 最小化配置 - 只创建集群本身
+  # 最小化配置
   cluster_addons                 = {}
   eks_managed_node_groups        = {}
-  cluster_encryption_config      = []
   cluster_endpoint_public_access = true
   enable_irsa                    = true
 
@@ -27,12 +26,4 @@ resource "aws_ec2_tag" "karpenter_subnet_tags" {
   resource_id = each.value
   key         = "karpenter.sh/discovery"
   value       = var.cluster_name
-}
-
-resource "aws_ec2_tag" "karpenter_subnet_env_tags" {
-  for_each = toset(var.private_subnet_ids)
-
-  resource_id = each.value
-  key         = "Environment"
-  value       = var.environment
 }
