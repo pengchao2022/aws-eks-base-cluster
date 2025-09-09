@@ -37,7 +37,7 @@ variable "tags" {
   type        = map(string)
   default = {
     Environment = "dev"
-    Project     = "python-dev"
+    Project     = "spring-dev"
     Terraform   = "true"
   }
 }

@@ -32,7 +32,7 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistry
 }
 
 # 创建单个Nodegroup，包含所有4个实例
-resource "aws_eks_node_group" "python_dev_nodes" {
+resource "aws_eks_node_group" "spring_dev_nodes" {
   cluster_name    = module.eks.cluster_name
   node_group_name = "spring-dev-nodegroup"
   node_role_arn   = aws_iam_role.node_group.arn
