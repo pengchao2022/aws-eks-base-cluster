@@ -102,5 +102,5 @@ resource "null_resource" "set_instance_names" {
     EOT
   }
 
-  depends_on = [aws_eks_node_group.python_dev_nodes]
+  depends_on = [aws_eks_node_group.spring_dev_nodes]
 }
