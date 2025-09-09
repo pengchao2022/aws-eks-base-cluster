@@ -69,7 +69,7 @@ resource "aws_eks_node_group" "spring_dev_nodes" {
 # 使用null_resource和local-exec来设置实例名称（更可靠）
 resource "null_resource" "set_instance_names" {
   triggers = {
-    nodegroup_name = aws_eks_node_group.python_dev_nodes.node_group_name
+    nodegroup_name = aws_eks_node_group.spring_dev_nodes.node_group_name
     node_count     = var.node_count
     cluster_name   = var.cluster_name
   }
@@ -86,7 +86,7 @@ resource "null_resource" "set_instance_names" {
       # 获取实例ID
       INSTANCE_IDS=$(aws ec2 describe-instances \
         --region ${var.region} \
-        --filters "Name=tag:eks:nodegroup-name,Values=${aws_eks_node_group.python_dev_nodes.node_group_name}" "Name=instance-state-name,Values=running" \
+        --filters "Name=tag:eks:nodegroup-name,Values=${aws_eks_node_group.spring_dev_nodes.node_group_name}" "Name=instance-state-name,Values=running" \
         --query "Reservations[].Instances[].InstanceId" \
         --output text)
       
