@@ -32,12 +32,13 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistry
 }
 
 # 创建单个Nodegroup，包含所有4个实例
-resource "aws_eks_node_group" "python_dev_nodes" {
+resource "aws_eks_node_group" "spring_dev_nodes" {
   cluster_name    = module.eks.cluster_name
-  node_group_name = "python-dev-nodegroup"
+  node_group_name = "spring-dev-nodegroup"
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = var.private_subnet_ids
 
+  # 使用标准的EKS优化AMI（不要使用自定义用户数据）
   ami_type       = "AL2_x86_64"
   capacity_type  = "ON_DEMAND"
   instance_types = [var.instance_type]
@@ -50,11 +51,11 @@ resource "aws_eks_node_group" "python_dev_nodes" {
 
   labels = {
     environment = "dev"
-    node-type   = "python-dev"
+    node-type   = "spring-dev"
   }
 
   tags = merge(var.tags, {
-    Name        = "python-dev-nodegroup"
+    Name        = "spring-dev-nodegroup"
     Environment = "dev"
   })
 
@@ -66,27 +67,23 @@ resource "aws_eks_node_group" "python_dev_nodes" {
   ]
 }
 
-# 使用null_resource和local-exec来设置实例名称（更可靠）
+# 节点创建后，通过AWS CLI设置实例名称
 resource "null_resource" "set_instance_names" {
   triggers = {
-    nodegroup_name = aws_eks_node_group.python_dev_nodes.node_group_name
-    node_count     = var.node_count
-    cluster_name   = var.cluster_name
+    cluster_name = var.cluster_name
+    node_count   = var.node_count
   }
 
   provisioner "local-exec" {
     command = <<EOT
-      #!/bin/bash
-      set -e
-      
       # 等待节点创建完成
-      echo "Waiting for EKS nodes to be ready..."
-      sleep 60
+      echo "Waiting for nodes to be ready..."
+      sleep 120
       
-      # 获取实例ID
+      # 获取节点实例ID
       INSTANCE_IDS=$(aws ec2 describe-instances \
         --region ${var.region} \
-        --filters "Name=tag:eks:nodegroup-name,Values=${aws_eks_node_group.python_dev_nodes.node_group_name}" "Name=instance-state-name,Values=running" \
+        --filters "Name=tag:eks:nodegroup-name,Values=python-dev-nodegroup" "Name=instance-state-name,Values=running" \
         --query "Reservations[].Instances[].InstanceId" \
         --output text)
       
@@ -95,7 +92,7 @@ resource "null_resource" "set_instance_names" {
       # 为每个实例设置名称
       COUNT=1
       for INSTANCE_ID in $INSTANCE_IDS; do
-        echo "Setting Name tag for $INSTANCE_ID: ${var.cluster_name}-$COUNT"
+        echo "Setting name for instance $INSTANCE_ID: ${var.cluster_name}-$COUNT"
         aws ec2 create-tags \
           --region ${var.region} \
           --resources $INSTANCE_ID \
@@ -105,5 +102,5 @@ resource "null_resource" "set_instance_names" {
     EOT
   }
 
-  depends_on = [aws_eks_node_group.python_dev_nodes]
+  depends_on = [aws_eks_node_group.spring_dev_nodes]
 }
