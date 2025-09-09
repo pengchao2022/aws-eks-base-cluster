@@ -1,3 +1,8 @@
+# 随机后缀以避免名称冲突
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
 # Karpenter IAM角色
 module "karpenter_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
@@ -20,6 +25,11 @@ module "karpenter_irsa" {
       namespace_service_accounts = ["karpenter:karpenter"]
     }
   }
+
+  tags = {
+    Environment = var.environment
+    Project     = "eks-karpenter"
+  }
 }
 
 # 创建EKS节点IAM角色
@@ -38,7 +48,9 @@ resource "aws_iam_role" "eks_node_role" {
   })
 
   tags = {
-    Environment = "production"
+    Environment = var.environment
+    Project     = "eks-karpenter"
+    ManagedBy   = "terraform"
   }
 }
 
@@ -60,6 +72,12 @@ resource "aws_iam_role_policy_attachment" "ec2_container_registry_readonly" {
 
 # Karpenter节点IAM实例配置文件
 resource "aws_iam_instance_profile" "karpenter" {
-  name = "KarpenterNodeInstanceProfile-${var.cluster_name}"
+  name = "KarpenterNodeInstanceProfile-${var.cluster_name}-${random_id.suffix.hex}"
   role = aws_iam_role.eks_node_role.name
+
+  tags = {
+    Environment = var.environment
+    Project     = "eks-karpenter"
+    ManagedBy   = "terraform"
+  }
 }

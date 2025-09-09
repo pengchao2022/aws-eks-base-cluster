@@ -1,6 +1,5 @@
 # 直接使用已知的Ubuntu 20.04 AMI ID（us-east-1区域）
 locals {
-  # Ubuntu 20.04 LTS AMI ID for us-east-1 (更新于2024年)
   ubuntu_ami = "ami-053b0d53c279acc90" # Ubuntu 20.04 LTS us-east-1
 }
 
@@ -9,22 +8,17 @@ resource "aws_launch_template" "ubuntu_lt" {
   image_id      = local.ubuntu_ami
   instance_type = var.node_instance_type
 
-  # 添加用户数据以确保节点正确加入EKS集群
   user_data = base64encode(<<-EOT
     #!/bin/bash
     set -ex
-    # 安装EKS需要的依赖
     apt-get update
     apt-get install -y apt-transport-https ca-certificates curl gnupg
-    # 安装AWS CLI
     apt-get install -y awscli
-    # 安装EKS节点所需组件
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
     echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
     apt-get update
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
-    # 设置必要的系统参数
     echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.conf
     echo 'net.bridge.bridge-nf-call-ip6tables=1' >> /etc/sysctl.conf
     sysctl -p
@@ -46,7 +40,8 @@ resource "aws_launch_template" "ubuntu_lt" {
     resource_type = "instance"
     tags = {
       Name        = "eks-ubuntu-node"
-      Environment = "production"
+      Environment = var.environment
+      Project     = "eks-karpenter"
     }
   }
 
@@ -54,8 +49,14 @@ resource "aws_launch_template" "ubuntu_lt" {
     resource_type = "volume"
     tags = {
       Name        = "eks-ubuntu-node"
-      Environment = "production"
+      Environment = var.environment
+      Project     = "eks-karpenter"
     }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "eks-karpenter"
   }
 
   lifecycle {
@@ -69,7 +70,6 @@ resource "aws_eks_node_group" "initial_nodes" {
   node_role_arn   = aws_iam_role.eks_node_role.arn
   subnet_ids      = var.private_subnet_ids
 
-  # 使用启动模板
   launch_template {
     id      = aws_launch_template.ubuntu_lt.id
     version = aws_launch_template.ubuntu_lt.latest_version
@@ -81,10 +81,8 @@ resource "aws_eks_node_group" "initial_nodes" {
     max_size     = var.max_size
   }
 
-  # 实例类型
   instance_types = [var.node_instance_type]
 
-  # 更新配置
   update_config {
     max_unavailable = 1
   }
@@ -98,6 +96,7 @@ resource "aws_eks_node_group" "initial_nodes" {
 
   tags = {
     Name        = "initial-ubuntu-node"
-    Environment = "production"
+    Environment = var.environment
+    Project     = "eks-karpenter"
   }
 }

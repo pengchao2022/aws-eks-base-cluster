@@ -14,14 +14,16 @@ module "eks" {
     vpc-cni = {
       most_recent = true
     }
-    # 注意：这里完全移除了coredns的配置
   }
 
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  # 禁用EKS模块自动创建节点组，我们将手动创建
+  # 禁用EKS模块自动创建节点组
   eks_managed_node_groups = {}
+
+  # 禁用KMS密钥创建
+  create_kms_key = false
 
   # EKS集群安全组
   cluster_security_group_additional_rules = {
@@ -59,24 +61,35 @@ module "eks" {
   create_aws_auth_configmap = true
   manage_aws_auth_configmap = true
 
-  # OIDC身份提供者配置（Karpenter需要）
+  # OIDC身份提供者配置
   enable_irsa = true
 
   tags = {
-    Environment = "production"
+    Environment = var.environment
+    Project     = "eks-karpenter"
   }
 
   cluster_tags = {
     "karpenter.sh/discovery" = var.cluster_name
+    "Environment"            = var.environment
   }
 }
 
 # 为Karpenter添加必要的标签到子网
 resource "aws_ec2_tag" "karpenter_subnet_tags" {
-  for_each    = toset(var.private_subnet_ids)
+  for_each = toset(var.private_subnet_ids)
+
   resource_id = each.value
   key         = "karpenter.sh/discovery"
   value       = var.cluster_name
+}
+
+resource "aws_ec2_tag" "karpenter_subnet_env_tags" {
+  for_each = toset(var.private_subnet_ids)
+
+  resource_id = each.value
+  key         = "Environment"
+  value       = var.environment
 }
 
 # 为Karpenter添加必要的标签到安全组
@@ -84,4 +97,10 @@ resource "aws_ec2_tag" "karpenter_sg_tags" {
   resource_id = module.eks.node_security_group_id
   key         = "karpenter.sh/discovery"
   value       = var.cluster_name
+}
+
+resource "aws_ec2_tag" "karpenter_sg_env_tags" {
+  resource_id = module.eks.node_security_group_id
+  key         = "Environment"
+  value       = var.environment
 }

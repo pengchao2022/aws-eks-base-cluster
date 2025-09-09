@@ -1,7 +1,18 @@
+variable "environment" {
+  description = "环境类型（development, staging, production）"
+  type        = string
+  default     = "development"
+}
+
+variable "aws_account_id" {
+  description = "AWS账户ID"
+  type        = string
+}
+
 variable "cluster_name" {
   description = "EKS集群名称"
   type        = string
-  default     = "production-eks-cluster"
+  default     = "development-eks-cluster"
 }
 
 variable "cluster_version" {
