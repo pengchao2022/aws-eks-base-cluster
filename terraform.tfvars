@@ -1,5 +1,5 @@
 region             = "us-east-1"
-cluster_name       = "dev-eks-cls-k"
+cluster_name       = "dev-eks-cls-1"
 node_count         = 4
 node_ami           = "ami-0fc5d935ebf8bc3bc"
 node_instance_type = "t3.micro"
