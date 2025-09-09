@@ -6,18 +6,15 @@ module "eks" {
   cluster_version                = var.cluster_version
   cluster_endpoint_public_access = true
 
-  # 禁用CoreDNS自动安装
+  # 完全禁用CoreDNS安装，只安装必要的组件
   cluster_addons = {
-    coredns = {
-      most_recent = false
-      preserve    = false
-    }
     kube-proxy = {
       most_recent = true
     }
     vpc-cni = {
       most_recent = true
     }
+    # 注意：这里完全移除了coredns的配置
   }
 
   vpc_id     = var.vpc_id
