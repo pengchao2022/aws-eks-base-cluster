@@ -1,39 +1,45 @@
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.23"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.11"
+    }
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 18.0"
+  version = "~> 19.0"
 
-  cluster_name    = var.cluster_name
-  cluster_version = var.cluster_version
-  vpc_id          = var.vpc_id
-  subnet_ids      = var.private_subnet_ids
+  cluster_name    = "var.cluster_name"
+  cluster_version = "1.28"
 
-  # 禁用所有插件
+  vpc_id     = var.vpc_id
+  subnet_ids = var.private_subnet_ids
+
   cluster_addons = {}
 
-  # 禁用EKS托管节点组
-  eks_managed_node_groups = {}
+  aws_auth_users = [
+    {
+      userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/admin"
+      username = "admin"
+      groups   = ["system:masters"]
+    }
+  ]
 
-  # 启用公共访问
-  cluster_endpoint_public_access = true
-
-  # 启用IAM角色服务账户
-  enable_irsa = true
-
-}
-
-# 为Karpenter添加必要的标签到子网
-resource "aws_ec2_tag" "karpenter_subnet_tags" {
-  for_each = toset(var.private_subnet_ids)
-
-  resource_id = each.value
-  key         = "karpenter.sh/discovery"
-  value       = var.cluster_name
-}
-
-resource "aws_ec2_tag" "karpenter_subnet_env_tags" {
-  for_each = toset(var.private_subnet_ids)
-
-  resource_id = each.value
-  key         = "Environment"
-  value       = var.environment
+  tags = {
+    Environment = "development"
+  }
 }
