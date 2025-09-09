@@ -7,7 +7,7 @@ resource "aws_launch_template" "ubuntu_lt" {
   name_prefix   = "ubuntu-eks-node-"
   image_id      = local.ubuntu_ami
   instance_type = var.node_instance_type
-  
+
   # 使用正确的EKS bootstrap脚本
   user_data = base64encode(<<-EOT
 MIME-Version: 1.0
@@ -122,7 +122,7 @@ resource "aws_eks_node_group" "initial_nodes" {
   # 使用启动模板
   launch_template {
     id      = aws_launch_template.ubuntu_lt.id
-    version = "$Latest"  # 使用最新版本
+    version = "$Latest" # 使用最新版本
   }
 
   scaling_config {
@@ -138,7 +138,7 @@ resource "aws_eks_node_group" "initial_nodes" {
   # 添加必要的标签选择器
   labels = {
     "node.kubernetes.io/instance-type" = var.node_instance_type
-    "environment" = var.environment
+    "environment"                      = var.environment
   }
 
   depends_on = [
