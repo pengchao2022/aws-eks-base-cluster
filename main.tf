@@ -19,10 +19,6 @@ module "eks" {
   # 启用IAM角色服务账户
   enable_irsa = true
 
-  tags = {
-    Environment = var.environment
-    Project     = "eks-karpenter"
-  }
 }
 
 # 为Karpenter添加必要的标签到子网

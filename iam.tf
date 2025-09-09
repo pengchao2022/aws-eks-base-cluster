@@ -47,11 +47,6 @@ resource "aws_iam_role" "eks_node_role" {
     Version = "2012-10-17"
   })
 
-  tags = {
-    Environment = var.environment
-    Project     = "eks-karpenter"
-    ManagedBy   = "terraform"
-  }
 }
 
 # 附加必要的策略到节点角色
@@ -75,9 +70,4 @@ resource "aws_iam_instance_profile" "karpenter" {
   name = "KarpenterNodeInstanceProfile-${var.cluster_name}-${random_id.suffix.hex}"
   role = aws_iam_role.eks_node_role.name
 
-  tags = {
-    Environment = var.environment
-    Project     = "eks-karpenter"
-    ManagedBy   = "terraform"
-  }
 }

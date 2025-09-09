@@ -36,28 +36,8 @@ resource "aws_launch_template" "ubuntu_lt" {
     }
   }
 
-  tag_specifications {
-    resource_type = "instance"
-    tags = {
-      Name        = "eks-ubuntu-node"
-      Environment = var.environment
-      Project     = "eks-karpenter"
-    }
-  }
 
-  tag_specifications {
-    resource_type = "volume"
-    tags = {
-      Name        = "eks-ubuntu-node"
-      Environment = var.environment
-      Project     = "eks-karpenter"
-    }
-  }
 
-  tags = {
-    Environment = var.environment
-    Project     = "eks-karpenter"
-  }
 
   lifecycle {
     create_before_destroy = true
@@ -94,9 +74,5 @@ resource "aws_eks_node_group" "initial_nodes" {
     aws_iam_role_policy_attachment.ec2_container_registry_readonly
   ]
 
-  tags = {
-    Name        = "initial-ubuntu-node"
-    Environment = var.environment
-    Project     = "eks-karpenter"
-  }
+
 }

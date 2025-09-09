@@ -1,6 +1,5 @@
 provider "aws" {
   region = var.region
-
   default_tags {
     tags = {
       Environment = var.environment
@@ -8,6 +7,8 @@ provider "aws" {
       ManagedBy   = "terraform"
     }
   }
+
+
 }
 
 provider "random" {}
