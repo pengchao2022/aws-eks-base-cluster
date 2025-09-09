@@ -31,26 +31,10 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistry
   role       = aws_iam_role.node_group.name
 }
 
-# 获取Ubuntu EKS优化AMI
-data "aws_ami" "ubuntu_eks" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical的官方Owner ID
-
-  filter {
-    name   = "name"
-    values = ["ubuntu-eks/k8s_1.27/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
-}
-
 # 创建启动模板来指定Ubuntu AMI
 resource "aws_launch_template" "ubuntu_eks" {
   name_prefix   = "${var.cluster_name}-ubuntu-"
-  image_id      = data.aws_ami.ubuntu_eks.id
+  image_id      = "ami-0c02fb55956c7d316" # Ubuntu 20.04 LTS us-east-1
   instance_type = var.instance_type
 
   tag_specifications {

@@ -5,13 +5,13 @@ private_subnet_ids = [
   "subnet-0b5e211de50e7f448",
   "subnet-0625f2efa2c32ba44",
 ]
-cluster_name  = "python-dev-eks"
+cluster_name  = "java-dev-eks"
 node_count    = 4
 instance_type = "t3.micro"
 
 # Tags
 tags = {
   Environment = "dev"
-  Project     = "python-dev"
+  Project     = "java-dev"
   Terraform   = "true"
 }
