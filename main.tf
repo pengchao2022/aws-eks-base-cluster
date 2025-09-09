@@ -1,7 +1,6 @@
 # 获取当前 AWS 账户信息
 data "aws_caller_identity" "current" {}
 
-
 # 创建 EKS 集群
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -16,14 +15,8 @@ module "eks" {
   # 禁用 KMS key 创建
   create_kms_key = false
 
-  # 集群认证配置
-  aws_auth_users = [
-    {
-      userarn  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/admin"
-      username = "admin"
-      groups   = ["system:masters"]
-    }
-  ]
+  # 让模块不要管理 aws-auth
+  manage_aws_auth_configmap = false
 
   cluster_addons = {}
 
@@ -31,3 +24,5 @@ module "eks" {
     Environment = "development"
   }
 }
+
+# 后续通过其他方式配置用户权限
