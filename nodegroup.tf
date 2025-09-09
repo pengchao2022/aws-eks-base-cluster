@@ -7,7 +7,7 @@ resource "aws_launch_template" "amazon_linux_lt" {
   name_prefix   = "amazon-linux-eks-node-"
   image_id      = data.aws_ssm_parameter.amazon_eks_ami.value
   instance_type = var.node_instance_type
-  
+
   # Amazon Linux 2 EKS优化AMI已经包含了所有必要的bootstrap脚本
   # 不需要额外的user_data，AMI会自动加入集群
 
@@ -76,7 +76,7 @@ resource "aws_eks_node_group" "initial_nodes" {
   # 添加节点标签
   labels = {
     "node.kubernetes.io/instance-type" = var.node_instance_type
-    "environment" = var.environment
+    "environment"                      = var.environment
   }
 
   depends_on = [
