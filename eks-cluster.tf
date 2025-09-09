@@ -15,10 +15,8 @@ module "eks" {
     ami_type = "AL2_x86_64"
   }
 
+  # 只安装必要的插件，移除coredns
   cluster_addons = {
-    coredns = {
-      most_recent = true
-    }
     kube-proxy = {
       most_recent = true
     }
