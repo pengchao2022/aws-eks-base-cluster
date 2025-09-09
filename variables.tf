@@ -22,7 +22,7 @@ variable "node_ami" {
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "dev-eks-cluster"
+  default     = "dev-eks-cls-1"
 }
 
 variable "node_count" {
