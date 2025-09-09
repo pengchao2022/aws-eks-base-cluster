@@ -1,55 +1,33 @@
-# 方法1：使用SSM参数获取最新的EKS优化Ubuntu AMI
-data "aws_ssm_parameter" "ubuntu_eks_ami" {
-  name = "/aws/service/canonical/ubuntu/eks/20.04/1.28/latest/amd64/hvm/ebs-gp2/ami-id"
-}
-
-# 方法2：备用方案 - 使用标准的Ubuntu 20.04 AMI
-data "aws_ami" "ubuntu_20_04" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-20.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-
-  filter {
-    name   = "root-device-type"
-    values = ["ebs"]
-  }
-
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
-  }
-}
-
-# 选择可用的AMI
+# 直接使用已知的Ubuntu 20.04 AMI ID（us-east-1区域）
 locals {
-  node_ami = try(data.aws_ssm_parameter.ubuntu_eks_ami.value, data.aws_ami.ubuntu_20_04.id)
+  # Ubuntu 20.04 LTS AMI ID for us-east-1 (更新于2024年)
+  ubuntu_ami = "ami-053b0d53c279acc90" # Ubuntu 20.04 LTS us-east-1
 }
 
 resource "aws_launch_template" "ubuntu_lt" {
   name_prefix   = "ubuntu-eks-node-"
-  image_id      = local.node_ami
+  image_id      = local.ubuntu_ami
   instance_type = var.node_instance_type
 
-  # 添加用户数据以确保节点正确加入集群
+  # 添加用户数据以确保节点正确加入EKS集群
   user_data = base64encode(<<-EOT
     #!/bin/bash
     set -ex
-    # 等待cloud-init完成
-    cloud-init status --wait
-    # 安装必要的组件
+    # 安装EKS需要的依赖
     apt-get update
-    apt-get install -y apt-transport-https ca-certificates curl
-    # 设置主机名
-    hostnamectl set-hostname $(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
+    apt-get install -y apt-transport-https ca-certificates curl gnupg
+    # 安装AWS CLI
+    apt-get install -y awscli
+    # 安装EKS节点所需组件
+    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+    echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
+    apt-get update
+    apt-get install -y kubelet kubeadm kubectl
+    apt-mark hold kubelet kubeadm kubectl
+    # 设置必要的系统参数
+    echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.conf
+    echo 'net.bridge.bridge-nf-call-ip6tables=1' >> /etc/sysctl.conf
+    sysctl -p
   EOT
   )
 
@@ -82,7 +60,6 @@ resource "aws_launch_template" "ubuntu_lt" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes        = [image_id]
   }
 }
 
