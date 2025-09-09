@@ -7,7 +7,6 @@ resource "aws_eks_node_group" "dev_nodes" {
   subnet_ids      = var.private_subnet_ids
 
   ami_type       = "CUSTOM"
-  instance_types = [var.node_instance_type]
 
   launch_template {
     id      = aws_launch_template.dev_nodes.id
