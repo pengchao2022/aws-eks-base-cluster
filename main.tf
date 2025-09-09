@@ -11,13 +11,6 @@ module "eks" {
 
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
-
-  # 禁用 KMS key 创建
-  create_kms_key = false
-
-  # 让模块不要管理 aws-auth
-  manage_aws_auth_configmap = false
-
   cluster_addons = {}
 
   tags = {
