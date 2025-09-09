@@ -1,7 +1,11 @@
-region             = "us-east-1"
-cluster_name       = "eks-fy-cluster"
-vpc_id             = "vpc-01a168ff311562657"
-private_subnet_ids = ["subnet-0a5f0a7603e136990", "subnet-0e6e2312a95a45f7a", "subnet-042a6867c8732efb6"]
+region       = "us-east-1"
+cluster_name = "eks-fy-cluster"
+vpc_id       = "vpc-0dd60e0efc5baa3af"
+private_subnet_ids = [
+  "subnet-0db3ff0a8f70ef7d2",
+  "subnet-0b5e211de50e7f448",
+  "subnet-0625f2efa2c32ba44",
+]
 
 # 节点配置
 node_instance_type = "t3.micro"

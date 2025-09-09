@@ -23,6 +23,9 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
+  # 禁用EKS模块自动创建节点组，我们将手动创建
+  eks_managed_node_groups = {}
+
   # EKS集群安全组
   cluster_security_group_additional_rules = {
     egress_nodes_ephemeral_ports_tcp = {
@@ -55,11 +58,30 @@ module "eks" {
     }
   }
 
-  # 禁用默认节点组
+  # 启用IAM角色访问配置
   create_aws_auth_configmap = true
   manage_aws_auth_configmap = true
 
+  # OIDC身份提供者配置（Karpenter需要）
+  enable_irsa = true
+
   tags = {
-    Environment = "production"
+    Environment              = "production"
+    karpenter.sh / discovery = var.cluster_name
   }
+}
+
+# 为Karpenter添加必要的标签到子网
+resource "aws_ec2_tag" "karpenter_subnet_tags" {
+  for_each    = toset(var.private_subnet_ids)
+  resource_id = each.value
+  key         = "karpenter.sh/discovery"
+  value       = var.cluster_name
+}
+
+# 为Karpenter添加必要的标签到安全组
+resource "aws_ec2_tag" "karpenter_sg_tags" {
+  resource_id = module.eks.node_security_group_id
+  key         = "karpenter.sh/discovery"
+  value       = var.cluster_name
 }
