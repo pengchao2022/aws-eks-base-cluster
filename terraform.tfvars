@@ -1,9 +1,9 @@
 region = "us-east-1"
-vpc_id = "vpc-0dd60e0efc5baa3af"
+vpc_id = "vpc-0f023780707c8b12e"
 private_subnet_ids = [
-  "subnet-0db3ff0a8f70ef7d2",
-  "subnet-0b5e211de50e7f448",
-  "subnet-0625f2efa2c32ba44",
+  "subnet-051a38ff0c9e2fe85",
+  "subnet-02566e5ee80de2235",
+  "subnet-0ece0150b4e3c319a",
 ]
 cluster_name  = "spring-dev-eks"
 node_count    = 4
