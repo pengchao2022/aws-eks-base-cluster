@@ -5,7 +5,7 @@ private_subnet_ids = [
   "subnet-044e65ebeca04ffc7",
   "subnet-0d5abc2715e416f7a",
 ]
-cluster_name  = "spring-dev-eks"
+cluster_name  = "springboot-dev-eks"
 node_count    = 4
 instance_type = "t3.micro"
 
