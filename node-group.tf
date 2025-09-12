@@ -32,9 +32,9 @@ resource "aws_iam_role_policy_attachment" "node_group_AmazonEC2ContainerRegistry
 }
 
 # 创建单个Nodegroup，包含所有4个实例
-resource "aws_eks_node_group" "spring_dev_nodes" {
+resource "aws_eks_node_group" "springboot_dev_nodes" {
   cluster_name    = module.eks.cluster_name
-  node_group_name = "spring-dev-nodegroup"
+  node_group_name = "springboot-dev-nodegroup"
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = var.private_subnet_ids
 
@@ -50,11 +50,11 @@ resource "aws_eks_node_group" "spring_dev_nodes" {
 
   labels = {
     environment = "dev"
-    node-type   = "spring-dev"
+    node-type   = "springboot-dev"
   }
 
   tags = merge(var.tags, {
-    Name        = "spring-dev-nodegroup"
+    Name        = "springboot-dev-nodegroup"
     Environment = "dev"
   })
 
@@ -69,7 +69,7 @@ resource "aws_eks_node_group" "spring_dev_nodes" {
 # 使用null_resource和local-exec来设置实例名称（更可靠）
 resource "null_resource" "set_instance_names" {
   triggers = {
-    nodegroup_name = aws_eks_node_group.spring_dev_nodes.node_group_name
+    nodegroup_name = aws_eks_node_group.springboot_dev_nodes.node_group_name
     node_count     = var.node_count
     cluster_name   = var.cluster_name
   }
@@ -86,7 +86,7 @@ resource "null_resource" "set_instance_names" {
       # 获取实例ID
       INSTANCE_IDS=$(aws ec2 describe-instances \
         --region ${var.region} \
-        --filters "Name=tag:eks:nodegroup-name,Values=${aws_eks_node_group.spring_dev_nodes.node_group_name}" "Name=instance-state-name,Values=running" \
+        --filters "Name=tag:eks:nodegroup-name,Values=${aws_eks_node_group.springboot_dev_nodes.node_group_name}" "Name=instance-state-name,Values=running" \
         --query "Reservations[].Instances[].InstanceId" \
         --output text)
       
@@ -105,5 +105,5 @@ resource "null_resource" "set_instance_names" {
     EOT
   }
 
-  depends_on = [aws_eks_node_group.spring_dev_nodes]
+  depends_on = [aws_eks_node_group.springboot_dev_nodes]
 }

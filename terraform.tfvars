@@ -12,6 +12,6 @@ instance_type = "t3.micro"
 # Tags
 tags = {
   Environment = "dev"
-  Project     = "spring-dev"
+  Project     = "springboot-dev"
   Terraform   = "true"
 }
