@@ -143,13 +143,7 @@ resource "aws_eks_node_group" "nodes" {
   instance_types = ["t3.micro"]
   capacity_type  = "ON_DEMAND"
   disk_size      = 20
-
-  # 使用我们自定义的安全组
-  remote_access {
-    ec2_ssh_key               = null
-    source_security_group_ids = [aws_security_group.eks_nodes.id]
-  }
-
+  
   tags = {
     Name = "${var.cluster_name}-nodes"
   }
