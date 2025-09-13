@@ -26,26 +26,8 @@ variable "private_subnets" {
   type        = list(string)
 }
 
-variable "ubuntu_ami_id" {
-  description = "Ubuntu AMI ID for EKS worker nodes"
-  type        = string
-  default     = "ami-0f8e81a3da6e2510a" # Ubuntu 20.04 LTS us-west-2
-}
-
-variable "node_instance_type" {
-  description = "Instance type for worker nodes"
-  type        = string
-  default     = "t3.medium"
-}
-
 variable "node_count" {
   description = "Number of worker nodes to deploy"
   type        = number
   default     = 4
-}
-
-variable "tags" {
-  description = "Additional tags to apply to all resources"
-  type        = map(string)
-  default     = {}
 }
