@@ -134,16 +134,16 @@ resource "aws_eks_node_group" "nodes" {
   subnet_ids      = var.private_subnets
 
   scaling_config {
-    desired_size = 2 # 先只创建2个节点
-    min_size     = 2
-    max_size     = 2
+    desired_size = 4
+    min_size     = 4
+    max_size     = 4
   }
 
   ami_type       = "AL2_x86_64"
   instance_types = ["t3.micro"]
   capacity_type  = "ON_DEMAND"
   disk_size      = 20
-  
+
   tags = {
     Name = "${var.cluster_name}-nodes"
   }
