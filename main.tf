@@ -28,10 +28,12 @@ module "eks" {
       max_size       = var.node_count
       desired_size   = var.node_count
       instance_types = ["t3.micro"]
+      capacity_type  = "ON_DEMAND"
     }
   }
 
   tags = {
-    Terraform = "true"
+    Terraform   = "true"
+    Environment = "prod"
   }
 }

@@ -17,3 +17,8 @@ output "node_count" {
   description = "Number of worker nodes"
   value       = var.node_count
 }
+
+output "config_command" {
+  description = "Command to configure kubectl"
+  value       = "aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region}"
+}

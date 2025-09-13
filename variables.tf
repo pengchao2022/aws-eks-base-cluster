@@ -7,7 +7,7 @@ variable "region" {
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "eks-ubuntu-cluster"
+  default     = "eks-cluster"
 }
 
 variable "cluster_version" {
