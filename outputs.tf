@@ -17,3 +17,8 @@ output "node_group_status" {
   description = "Node group status"
   value       = aws_eks_node_group.nodes.status
 }
+
+output "config_command" {
+  description = "Command to configure kubectl"
+  value       = "aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region}"
+}

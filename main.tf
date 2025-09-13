@@ -1,9 +1,92 @@
-# 获取VPC信息
-data "aws_vpc" "selected" {
-  id = var.vpc_id
+# EKS Cluster
+resource "aws_eks_cluster" "this" {
+  name     = var.cluster_name
+  version  = "1.28"
+  role_arn = aws_iam_role.cluster.arn
+
+  vpc_config {
+    subnet_ids              = var.private_subnets
+    endpoint_private_access = true
+    endpoint_public_access  = true
+  }
+
+  tags = {
+    Name = var.cluster_name
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
+    aws_iam_role_policy_attachment.cluster_AmazonEKSServicePolicy,
+  ]
 }
 
-# 创建专门的安全组给节点
+# IAM Role for EKS Cluster
+resource "aws_iam_role" "cluster" {
+  name = "${var.cluster_name}-cluster-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.cluster.name
+}
+
+resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSServicePolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+  role       = aws_iam_role.cluster.name
+}
+
+# IAM Role for EKS Nodes
+resource "aws_iam_role" "nodes" {
+  name = "${var.cluster_name}-node-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "nodes_AmazonEKSWorkerNodePolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_iam_role_policy_attachment" "nodes_AmazonEKS_CNI_Policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_iam_role_policy_attachment" "nodes_AmazonEC2ContainerRegistryReadOnly" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_iam_role_policy_attachment" "nodes_AmazonSSMManagedInstanceCore" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  role       = aws_iam_role.nodes.name
+}
+
+# 安全组 for EKS 节点
 resource "aws_security_group" "eks_nodes" {
   name_prefix = "${var.cluster_name}-nodes-"
   vpc_id      = var.vpc_id
@@ -43,7 +126,7 @@ resource "aws_security_group_rule" "nodes_to_nodes" {
   type                     = "ingress"
 }
 
-# 更新节点组配置
+# EKS Node Group - 使用最简单的配置
 resource "aws_eks_node_group" "nodes" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "main-nodes"
@@ -51,7 +134,7 @@ resource "aws_eks_node_group" "nodes" {
   subnet_ids      = var.private_subnets
 
   scaling_config {
-    desired_size = 2 # 先减少到2个节点
+    desired_size = 2 # 先只创建2个节点
     min_size     = 2
     max_size     = 2
   }
@@ -67,11 +150,6 @@ resource "aws_eks_node_group" "nodes" {
     source_security_group_ids = [aws_security_group.eks_nodes.id]
   }
 
-  # 添加必要的标签
-  labels = {
-    environment = "test"
-  }
-
   tags = {
     Name = "${var.cluster_name}-nodes"
   }
@@ -82,11 +160,8 @@ resource "aws_eks_node_group" "nodes" {
     aws_iam_role_policy_attachment.nodes_AmazonEC2ContainerRegistryReadOnly,
     aws_iam_role_policy_attachment.nodes_AmazonSSMManagedInstanceCore,
     aws_eks_cluster.this,
+    aws_security_group.eks_nodes,
+    aws_security_group_rule.cluster_to_nodes,
+    aws_security_group_rule.nodes_to_nodes,
   ]
-}
-
-# 添加必要的IAM策略
-resource "aws_iam_role_policy_attachment" "nodes_AmazonSSMManagedInstanceCore" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-  role       = aws_iam_role.nodes.name
 }
