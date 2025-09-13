@@ -1,5 +1,5 @@
 region          = "us-east-1"
-cluster_name    = "python-eks-cluster"
+cluster_name    = "spring-eks-cluster"
 cluster_version = "1.28"
 vpc_id          = "vpc-0c6781da1e3098582"
 private_subnets = [
@@ -14,6 +14,6 @@ node_count         = 4
 # Tags
 tags = {
   Environment = "dev"
-  Project     = "springboot-dev"
+  Project     = "spring-dev"
   Terraform   = "true"
 }
