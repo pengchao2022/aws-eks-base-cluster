@@ -85,37 +85,55 @@ resource "aws_iam_role_policy_attachment" "nodes_AmazonSSMManagedInstanceCore" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   role       = aws_iam_role.nodes.name
 }
-
-# 安全组 for EKS 节点
-resource "aws_security_group" "eks_nodes" {
-  name_prefix = "${var.cluster_name}-nodes-"
-  vpc_id      = var.vpc_id
-
-  # 允许所有出站流量
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.cluster_name}-nodes-sg"
-  }
+# 获取集群的安全组ID
+data "aws_eks_cluster" "this" {
+  name = var.cluster_name
 }
 
-# 允许集群安全组访问节点
-resource "aws_security_group_rule" "cluster_to_nodes" {
-  description              = "Allow cluster to communicate with nodes"
+# 允许节点安全组访问集群的443端口（API Server）
+resource "aws_security_group_rule" "nodes_to_cluster_api" {
+  description              = "Allow nodes to communicate with cluster API server"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  source_security_group_id = aws_security_group.eks_nodes.id
+  type                     = "ingress"
+}
+
+# 允许节点安全组访问集群的DNS端口（如果使用CoreDNS）
+resource "aws_security_group_rule" "nodes_to_cluster_dns" {
+  description              = "Allow nodes to communicate with cluster DNS"
+  from_port                = 53
+  to_port                  = 53
+  protocol                 = "tcp"
+  security_group_id        = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  source_security_group_id = aws_security_group.eks_nodes.id
+  type                     = "ingress"
+}
+
+resource "aws_security_group_rule" "nodes_to_cluster_dns_udp" {
+  description              = "Allow nodes to communicate with cluster DNS (UDP)"
+  from_port                = 53
+  to_port                  = 53
+  protocol                 = "udp"
+  security_group_id        = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  source_security_group_id = aws_security_group.eks_nodes.id
+  type                     = "ingress"
+}
+
+# 允许集群安全组访问节点的kubelet端口（1025-65535）
+resource "aws_security_group_rule" "cluster_to_nodes_kubelet" {
+  description              = "Allow cluster to communicate with nodes kubelet"
   from_port                = 1025
   to_port                  = 65535
   protocol                 = "tcp"
   security_group_id        = aws_security_group.eks_nodes.id
-  source_security_group_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  source_security_group_id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
   type                     = "ingress"
 }
 
-# 允许节点间通信
+# 允许节点间通信的所有端口
 resource "aws_security_group_rule" "nodes_to_nodes" {
   description              = "Allow nodes to communicate with each other"
   from_port                = 0
@@ -125,6 +143,22 @@ resource "aws_security_group_rule" "nodes_to_nodes" {
   source_security_group_id = aws_security_group.eks_nodes.id
   type                     = "ingress"
 }
+
+# 允许节点访问互联网（出站）
+resource "aws_security_group_rule" "nodes_to_internet" {
+  description       = "Allow nodes to access internet"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  security_group_id = aws_security_group.eks_nodes.id
+  cidr_blocks       = ["0.0.0.0/0"]
+  type              = "egress"
+}
+
+
+
+
+
 
 # EKS Node Group - 使用最简单的配置
 resource "aws_eks_node_group" "nodes" {
