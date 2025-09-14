@@ -64,32 +64,6 @@ resource "null_resource" "install_karpenter" {
       # 创建 Karpenter 命名空间
       kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
       
-      # 安装 Karpenter（使用特定版本）
-      kubectl apply -f https://github.com/aws/karpenter/releases/download/v0.30.0/release.yaml
-      
-      # 等待 Karpenter 就绪
-      kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=karpenter -n karpenter --timeout=300s
-    EOT
-  }
-
-  depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
-}
-
-# 使用本地执行器来创建 Karpenter 资源
-resource "null_resource" "install_karpenter" {
-  triggers = {
-    cluster_endpoint = module.eks.cluster_endpoint
-    cluster_ca_cert  = module.eks.cluster_certificate_authority_data
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # 更新 kubeconfig
-      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
-      # 创建 Karpenter 命名空间
-      kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
-      
       # 安装 Karpenter CRDs
       kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_provisioners.yaml
       kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_machines.yaml
@@ -139,6 +113,89 @@ resource "null_resource" "install_karpenter" {
   }
 
   depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
+}
+
+# 使用本地执行器来创建 Karpenter 资源
+resource "null_resource" "create_karpenter_resources" {
+  triggers = {
+    karpenter_installed = null_resource.install_karpenter.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+      
+      # 创建 Provisioner
+      cat <<EOF | kubectl apply -f -
+      apiVersion: karpenter.sh/v1alpha5
+      kind: Provisioner
+      metadata:
+        name: default
+      spec:
+        requirements:
+          - key: "karpenter.sh/capacity-type"
+            operator: In
+            values: ["on-demand"]
+          - key: "node.kubernetes.io/instance-type"
+            operator: In
+            values: ${jsonencode(var.instance_types)}
+          - key: "kubernetes.io/arch"
+            operator: In
+            values: ["amd64"]
+        providerRef:
+          name: default
+        ttlSecondsAfterEmpty: 30
+        limits:
+          resources:
+            cpu: 1000
+        consolidation:
+          enabled: true
+      EOF
+      
+      # 创建 AWSNodeTemplate
+      cat <<EOF | kubectl apply -f -
+      apiVersion: karpenter.k8s.aws/v1alpha1
+      kind: AWSNodeTemplate
+      metadata:
+        name: default
+      spec:
+        subnetSelector:
+          karpenter.sh/discovery: ${var.cluster_name}
+        securityGroupSelector:
+          karpenter.sh/discovery: ${var.cluster_name}
+        tags:
+          karpenter.sh/discovery: ${var.cluster_name}
+          Environment: "dev"
+      EOF
+      
+      # 创建测试部署
+      cat <<EOF | kubectl apply -f -
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: inflate
+      spec:
+        replicas: ${var.desired_size}
+        selector:
+          matchLabels:
+            app: inflate
+        template:
+          metadata:
+            labels:
+              app: inflate
+          spec:
+            terminationGracePeriodSeconds: 0
+            containers:
+              - name: inflate
+                image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+                resources:
+                  requests:
+                    cpu: 1
+      EOF
+    EOT
+  }
+
+  depends_on = [null_resource.install_karpenter]
 }
 
 # 手动安装 CoreDNS
@@ -357,7 +414,7 @@ resource "null_resource" "install_coredns" {
         selector:
           eks.amazonaws.com/component: coredns
           app.kubernetes.io/name: coredns
-          k8s-app: karpenter
+          k8s-app: kube-dns
         clusterIP: 10.100.0.10
         ports:
         - name: dns
