@@ -1,13 +1,7 @@
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-west-2"
-}
-
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "eks-cluster"
+  default     = "eks-karpenter-cluster"
 }
 
 variable "cluster_version" {
@@ -21,13 +15,25 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "private_subnets" {
+variable "private_subnet_ids" {
   description = "List of private subnet IDs"
   type        = list(string)
 }
 
-variable "node_count" {
-  description = "Number of worker nodes to deploy"
+variable "instance_types" {
+  description = "Instance types for Karpenter nodes"
+  type        = list(string)
+  default     = ["t3.micro"]
+}
+
+variable "desired_size" {
+  description = "Desired number of worker nodes"
   type        = number
   default     = 4
+}
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
 }

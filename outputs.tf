@@ -1,29 +1,19 @@
-output "cluster_id" {
-  description = "EKS cluster ID"
-  value       = aws_eks_cluster.this.id
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = module.eks.cluster_name
 }
 
 output "cluster_endpoint" {
   description = "Endpoint for EKS control plane"
-  value       = aws_eks_cluster.this.endpoint
+  value       = module.eks.cluster_endpoint
 }
 
-output "cluster_status" {
-  description = "EKS cluster status"
-  value       = aws_eks_cluster.this.status
+output "cluster_security_group_id" {
+  description = "Security group ids attached to the cluster control plane"
+  value       = module.eks.cluster_security_group_id
 }
 
-output "node_group_status" {
-  description = "Node group status"
-  value       = aws_eks_node_group.nodes.status
-}
-
-output "node_security_group_id" {
-  description = "Node security group ID"
-  value       = aws_security_group.eks_nodes.id
-}
-
-output "config_command" {
-  description = "Command to configure kubectl"
-  value       = "aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region}"
+output "karpenter_node_role_arn" {
+  description = "Karpenter node IAM role ARN"
+  value       = aws_iam_role.karpenter_node_role.arn
 }

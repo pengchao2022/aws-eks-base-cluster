@@ -1,178 +1,161 @@
-# EKS Cluster
-resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
-  version  = "1.28"
-  role_arn = aws_iam_role.cluster.arn
+terraform {
+  required_version = ">= 1.0"
 
-  vpc_config {
-    subnet_ids              = var.private_subnets
-    endpoint_private_access = true
-    endpoint_public_access  = true
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+data "aws_eks_cluster_auth" "this" {
+  name = module.eks.cluster_name
+}
+
+data "aws_caller_identity" "current" {}
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 19.0"
+
+  cluster_name                   = var.cluster_name
+  cluster_version                = var.cluster_version
+  cluster_endpoint_public_access = true
+
+  vpc_id     = var.vpc_id
+  subnet_ids = var.private_subnet_ids
+
+  # EKS Managed Node Group not used (using Karpenter instead)
+  eks_managed_node_groups = {}
+
+  # Enable IAM Role for Service Account (IRSA)
+  enable_irsa = true
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
+    }
   }
 
   tags = {
-    Name = var.cluster_name
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
-    aws_iam_role_policy_attachment.cluster_AmazonEKSServicePolicy,
-  ]
-}
-
-# IAM Role for EKS Cluster
-resource "aws_iam_role" "cluster" {
-  name = "${var.cluster_name}-cluster-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.cluster.name
-}
-
-resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSServicePolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
-  role       = aws_iam_role.cluster.name
-}
-
-# IAM Role for EKS Nodes
-resource "aws_iam_role" "nodes" {
-  name = "${var.cluster_name}-node-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_AmazonEKSWorkerNodePolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_AmazonEKS_CNI_Policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_AmazonEC2ContainerRegistryReadOnly" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_AmazonSSMManagedInstanceCore" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-  role       = aws_iam_role.nodes.name
-}
-
-# 安全组 for EKS 节点
-resource "aws_security_group" "eks_nodes" {
-  name_prefix = "${var.cluster_name}-nodes-"
-  vpc_id      = var.vpc_id
-  description = "Security group for EKS worker nodes"
-
-  tags = {
-    Name = "${var.cluster_name}-nodes-sg"
+    Environment              = "dev"
+    Terraform                = "true"
+    "karpenter.sh/discovery" = var.cluster_name
   }
 }
 
-# 安全组规则 - 允许节点访问互联网
-resource "aws_security_group_rule" "nodes_to_internet" {
-  description       = "Allow nodes to access internet"
-  from_port         = 0
-  to_port           = 0
-  protocol          = "-1"
-  security_group_id = aws_security_group.eks_nodes.id
-  cidr_blocks       = ["0.0.0.0/0"]
-  type              = "egress"
-}
-
-# 安全组规则 - 允许节点间通信
-resource "aws_security_group_rule" "nodes_to_nodes" {
-  description              = "Allow nodes to communicate with each other"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  security_group_id        = aws_security_group.eks_nodes.id
-  source_security_group_id = aws_security_group.eks_nodes.id
-  type                     = "ingress"
-}
-
-# EKS Node Group - 简化配置（先不配置安全组规则）
-resource "aws_eks_node_group" "nodes" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "simple-nodes"
-  node_role_arn   = aws_iam_role.nodes.arn
-  subnet_ids      = var.private_subnets
-
-  scaling_config {
-    desired_size = 4
-    min_size     = 4
-    max_size     = 4
+# 使用本地执行器来安装 Karpenter，而不是使用 provider 配置
+resource "null_resource" "install_karpenter" {
+  triggers = {
+    cluster_endpoint = module.eks.cluster_endpoint
+    cluster_ca_cert  = module.eks.cluster_certificate_authority_data
   }
 
-  # 最简配置
-  ami_type       = "AL2_x86_64"
-  instance_types = ["t3.micro"]
-  disk_size      = 20
-
-  tags = {
-    Name = "simple-nodes"
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+      helm repo add karpenter https://charts.karpenter.sh
+      helm repo update
+      helm upgrade --install karpenter karpenter/karpenter \
+        --namespace karpenter \
+        --create-namespace \
+        --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
+        --set clusterName=${var.cluster_name} \
+        --set clusterEndpoint=${module.eks.cluster_endpoint} \
+        --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
+        --version 0.32.1
+    EOT
   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.nodes_AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.nodes_AmazonEKS_CNI_Policy,
-    aws_iam_role_policy_attachment.nodes_AmazonEC2ContainerRegistryReadOnly,
-    aws_iam_role_policy_attachment.nodes_AmazonSSMManagedInstanceCore,
-    aws_security_group.eks_nodes,
-    aws_security_group_rule.nodes_to_internet,
-    aws_security_group_rule.nodes_to_nodes,
-  ]
+  depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
 }
 
-# 在集群创建后，手动添加安全组规则
-resource "aws_security_group_rule" "nodes_to_cluster_api" {
-  description              = "Allow nodes to communicate with cluster API server"
-  from_port                = 443
-  to_port                  = 443
-  protocol                 = "tcp"
-  security_group_id        = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-  source_security_group_id = aws_security_group.eks_nodes.id
-  type                     = "ingress"
+# 使用本地执行器来创建 Karpenter 资源
+resource "null_resource" "create_karpenter_resources" {
+  triggers = {
+    karpenter_installed = null_resource.install_karpenter.id
+  }
 
-  depends_on = [aws_eks_cluster.this]
-}
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+      
+      # 创建 Provisioner
+      cat <<EOF | kubectl apply -f -
+      apiVersion: karpenter.sh/v1alpha5
+      kind: Provisioner
+      metadata:
+        name: default
+      spec:
+        requirements:
+          - key: "karpenter.sh/capacity-type"
+            operator: In
+            values: ["on-demand"]
+          - key: "node.kubernetes.io/instance-type"
+            operator: In
+            values: ${jsonencode(var.instance_types)}
+          - key: "kubernetes.io/arch"
+            operator: In
+            values: ["amd64"]
+        providerRef:
+          name: default
+        ttlSecondsAfterEmpty: 30
+        limits:
+          resources:
+            cpu: 1000
+        consolidation:
+          enabled: true
+      EOF
+      
+      # 创建 AWSNodeTemplate
+      cat <<EOF | kubectl apply -f -
+      apiVersion: karpenter.k8s.aws/v1alpha1
+      kind: AWSNodeTemplate
+      metadata:
+        name: default
+      spec:
+        subnetSelector:
+          karpenter.sh/discovery: ${var.cluster_name}
+        securityGroupSelector:
+          karpenter.sh/discovery: ${var.cluster_name}
+        tags:
+          karpenter.sh/discovery: ${var.cluster_name}
+          Environment: "dev"
+      EOF
+      
+      # 创建测试部署
+      cat <<EOF | kubectl apply -f -
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: inflate
+      spec:
+        replicas: ${var.desired_size}
+        selector:
+          matchLabels:
+            app: inflate
+        template:
+          metadata:
+            labels:
+              app: inflate
+          spec:
+            terminationGracePeriodSeconds: 0
+            containers:
+              - name: inflate
+                image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+                resources:
+                  requests:
+                    cpu: 1
+      EOF
+    EOT
+  }
 
-resource "aws_security_group_rule" "cluster_to_nodes_kubelet" {
-  description              = "Allow cluster to communicate with nodes kubelet"
-  from_port                = 1025
-  to_port                  = 65535
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.eks_nodes.id
-  source_security_group_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-  type                     = "ingress"
-
-  depends_on = [aws_eks_cluster.this]
+  depends_on = [null_resource.install_karpenter]
 }
