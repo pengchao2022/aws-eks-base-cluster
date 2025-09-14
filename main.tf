@@ -43,17 +43,50 @@ module "eks" {
   }
 
   tags = {
-    Environment              = "dev"
-    Terraform                = "true"
+    Environment = "dev"
+    Terraform   = "true"
     "karpenter.sh/discovery" = var.cluster_name
   }
 }
 
-# 使用 Helm 安装 Karpenter v0.28.1
+# 使用 kubectl 安装 Karpenter CRDs
+resource "null_resource" "install_karpenter_crds" {
+  triggers = {
+    cluster_endpoint = module.eks.cluster_endpoint
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # 更新 kubeconfig
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+      
+      # 创建 Karpenter 命名空间
+      kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
+      
+      # 安装 Karpenter CRDs (使用已知存在的版本)
+      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_provisioners.yaml
+      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_machines.yaml
+      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_nodepools.yaml
+      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.k8s.aws_awsnodetemplates.yaml
+      
+      # 等待 CRDs 就绪
+      kubectl wait --for condition=established --timeout=300s crd/provisioners.karpenter.sh
+      kubectl wait --for condition=established --timeout=300s crd/machines.karpenter.sh
+      kubectl wait --for condition=established --timeout=300s crd/nodepools.karpenter.sh
+      kubectl wait --for condition=established --timeout=300s crd/nodeclaims.karpenter.sh
+      kubectl wait --for condition=established --timeout=300s crd/awsnodetemplates.karpenter.k8s.aws
+    EOT
+  }
+
+  depends_on = [module.eks]
+}
+
+# 使用 Helm 安装 Karpenter
 resource "null_resource" "install_karpenter" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
-    cluster_ca_cert  = module.eks.cluster_certificate_authority_data
+    crds_installed   = null_resource.install_karpenter_crds.id
   }
 
   provisioner "local-exec" {
@@ -65,17 +98,16 @@ resource "null_resource" "install_karpenter" {
       helm repo add karpenter https://charts.karpenter.sh
       helm repo update
       
-      # 安装 Karpenter v0.28.1
+      # 安装 Karpenter
       helm upgrade --install karpenter karpenter/karpenter \
         --namespace karpenter \
-        --create-namespace \
         --version v0.28.1 \
         --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
         --set clusterName=${var.cluster_name} \
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
         --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name}
       
-      # 等待 Karpenter 就绪，增加超时时间并添加重试逻辑
+      # 等待 Karpenter 就绪
       for i in {1..10}; do
         echo "Waiting for Karpenter to be ready (attempt $i/10)..."
         if kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=60s; then
@@ -95,7 +127,7 @@ resource "null_resource" "install_karpenter" {
     EOT
   }
 
-  depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
+  depends_on = [null_resource.install_karpenter_crds, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
 }
 
 # 使用本地执行器来创建 Karpenter 资源
@@ -107,6 +139,9 @@ resource "null_resource" "create_karpenter_resources" {
   provisioner "local-exec" {
     command = <<-EOT
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+      
+      # 等待 CRDs 完全就绪
+      sleep 30
       
       # 创建 Provisioner
       cat <<EOF | kubectl apply -f -
@@ -181,7 +216,7 @@ resource "null_resource" "create_karpenter_resources" {
   depends_on = [null_resource.install_karpenter]
 }
 
-# 手动安装 CoreDNS
+# 使用 Helm 安装 CoreDNS (更可靠的方法)
 resource "null_resource" "install_coredns" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
@@ -195,220 +230,16 @@ resource "null_resource" "install_coredns" {
       # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       
-      # 安装 CoreDNS
-      cat <<EOF | kubectl apply -f -
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
-        name: coredns
-        namespace: kube-system
-        labels:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRole
-      metadata:
-        labels:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-        name: system:coredns
-      rules:
-      - apiGroups:
-        - ""
-        resources:
-        - endpoints
-        - services
-        - pods
-        - namespaces
-        verbs:
-        - list
-        - watch
-      - apiGroups:
-        - discovery.k8s.io
-        resources:
-        - endpointslices
-        verbs:
-        - list
-        - watch
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRoleBinding
-      metadata:
-        annotations:
-          rbac.authorization.kubernetes.io/autoupdate: "true"
-        labels:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-        name: system:coredns
-      roleRef:
-        apiGroup: rbac.authorization.k8s.io
-        kind: ClusterRole
-        name: system:coredns
-      subjects:
-      - kind: ServiceAccount
-        name: coredns
-        namespace: kube-system
-      ---
-      apiVersion: v1
-      data:
-        Corefile: |
-          .:53 {
-              errors
-              health {
-                  lameduck 5s
-              }
-              ready
-              kubernetes cluster.local in-addr.arpa ip6.arpa {
-                  pods insecure
-                  fallthrough in-addr.arpa ip6.arpa
-                  ttl 30
-              }
-              prometheus :9153
-              forward . /etc/resolv.conf
-              cache 30
-              loop
-              reload
-              loadbalance
-          }
-        kind: ConfigMap
-        metadata:
-          name: coredns
-          namespace: kube-system
-          labels:
-            eks.amazonaws.com/component: coredns
-            app.kubernetes.io/name: coredns
-      ---
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: coredns
-        namespace: kube-system
-        labels:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-          k8s-app: kube-dns
-      spec:
-        strategy:
-          type: RollingUpdate
-          rollingUpdate:
-            maxUnavailable: 1
-        selector:
-          matchLabels:
-            eks.amazonaws.com/component: coredns
-            app.kubernetes.io/name: coredns
-            k8s-app: kube-dns
-        template:
-          metadata:
-            labels:
-              eks.amazonaws.com/component: coredns
-              app.kubernetes.io/name: coredns
-              k8s-app: kube-dns
-          spec:
-            priorityClassName: system-cluster-critical
-            serviceAccountName: coredns
-            tolerations:
-              - key: "CriticalAddonsOnly"
-                operator: "Exists"
-            nodeSelector:
-              kubernetes.io/os: linux
-            affinity:
-              podAntiAffinity:
-                preferredDuringSchedulingIgnoredDuringExecution:
-                - weight: 100
-                  podAffinityTerm:
-                    labelSelector:
-                      matchExpressions:
-                      - key: k8s-app
-                        operator: In
-                        values: ["kube-dns"]
-                    topologyKey: kubernetes.io/hostname
-            containers:
-            - name: coredns
-              image: public.ecr.aws/eks/coredns:v1.10.1-eksbuild.4
-              imagePullPolicy: IfNotPresent
-              resources:
-                limits:
-                  memory: 170Mi
-                requests:
-                  cpu: 100m
-                  memory: 70Mi
-              args: [ "-conf", "/etc/coredns/Corefile" ]
-              volumeMounts:
-              - name: config-volume
-                mountPath: /etc/coredns
-                readOnly: true
-              ports:
-              - containerPort: 53
-                name: dns
-                protocol: UDP
-              - containerPort: 53
-                name: dns-tcp
-                protocol: TCP
-              - containerPort: 9153
-                name: metrics
-                protocol: TCP
-              livenessProbe:
-                httpGet:
-                  path: /health
-                  port: 8080
-                  scheme: HTTP
-                initialDelaySeconds: 60
-                timeoutSeconds: 5
-                successThreshold: 1
-                failureThreshold: 5
-              readinessProbe:
-                httpGet:
-                  path: /ready
-                  port: 8181
-                  scheme: HTTP
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  add:
-                  - NET_BIND_SERVICE
-                  drop:
-                  - all
-                readOnlyRootFilesystem: true
-            dnsPolicy: Default
-            volumes:
-            - name: config-volume
-              configMap:
-                name: coredns
-                items:
-                - key: Corefile
-                  path: Corefile
-      ---
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: kube-dns
-        namespace: kube-system
-        annotations:
-          prometheus.io/port: "9153"
-          prometheus.io/scrape: "true"
-        labels:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-          k8s-app: kube-dns
-          kubernetes.io/cluster-service: "true"
-          kubernetes.io/name: "CoreDNS"
-      spec:
-        selector:
-          eks.amazonaws.com/component: coredns
-          app.kubernetes.io/name: coredns
-          k8s-app: kube-dns
-        clusterIP: 10.100.0.10
-        ports:
-        - name: dns
-          port: 53
-          protocol: UDP
-        - name: dns-tcp
-          port: 53
-          protocol: TCP
-        - name: metrics
-          port: 9153
-          protocol: TCP
+      # 使用 Helm 安装 CoreDNS
+      helm repo add eks https://aws.github.io/eks-charts
+      helm repo update
+      
+      helm upgrade --install coredns eks/coredns \
+        --namespace kube-system \
+        --set serviceAccount.name=coredns \
+        --set service.annotations."prometheus\\.io/port"=9153 \
+        --set service.annotations."prometheus\\.io/scrape"=true \
+        --set service.clusterIP=10.100.0.10
     EOT
   }
 
