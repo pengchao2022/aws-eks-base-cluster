@@ -43,8 +43,8 @@ module "eks" {
   }
 
   tags = {
-    Environment = "dev"
-    Terraform   = "true"
+    Environment              = "dev"
+    Terraform                = "true"
     "karpenter.sh/discovery" = var.cluster_name
   }
 }
