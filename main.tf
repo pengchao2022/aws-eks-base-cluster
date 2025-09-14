@@ -49,8 +49,8 @@ module "eks" {
   }
 }
 
-# 使用 kubectl 安装 Karpenter CRDs
-resource "null_resource" "install_karpenter_crds" {
+# 使用 Helm 安装 Karpenter（包含 CRDs）
+resource "null_resource" "install_karpenter" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
   }
@@ -63,49 +63,19 @@ resource "null_resource" "install_karpenter_crds" {
       # 创建 Karpenter 命名空间
       kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
       
-      # 安装 Karpenter CRDs (使用已知存在的版本)
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_provisioners.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_machines.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_nodepools.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.28.1/pkg/apis/crds/karpenter.k8s.aws_awsnodetemplates.yaml
-      
-      # 等待 CRDs 就绪
-      kubectl wait --for condition=established --timeout=300s crd/provisioners.karpenter.sh
-      kubectl wait --for condition=established --timeout=300s crd/machines.karpenter.sh
-      kubectl wait --for condition=established --timeout=300s crd/nodepools.karpenter.sh
-      kubectl wait --for condition=established --timeout=300s crd/nodeclaims.karpenter.sh
-      kubectl wait --for condition=established --timeout=300s crd/awsnodetemplates.karpenter.k8s.aws
-    EOT
-  }
-
-  depends_on = [module.eks]
-}
-
-# 使用 Helm 安装 Karpenter
-resource "null_resource" "install_karpenter" {
-  triggers = {
-    cluster_endpoint = module.eks.cluster_endpoint
-    crds_installed   = null_resource.install_karpenter_crds.id
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # 更新 kubeconfig
-      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
       # 添加和更新 Helm 仓库
       helm repo add karpenter https://charts.karpenter.sh
       helm repo update
       
-      # 安装 Karpenter
+      # 安装 Karpenter（包含 CRDs）
       helm upgrade --install karpenter karpenter/karpenter \
         --namespace karpenter \
         --version v0.28.1 \
         --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
         --set clusterName=${var.cluster_name} \
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
-        --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name}
+        --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
+        --set installCRDs=true  # 确保 CRDs 被安装
       
       # 等待 Karpenter 就绪
       for i in {1..10}; do
@@ -127,21 +97,51 @@ resource "null_resource" "install_karpenter" {
     EOT
   }
 
-  depends_on = [null_resource.install_karpenter_crds, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
+  depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
 }
 
-# 使用本地执行器来创建 Karpenter 资源
-resource "null_resource" "create_karpenter_resources" {
+# 等待 CRDs 就绪
+resource "null_resource" "wait_for_crds" {
   triggers = {
     karpenter_installed = null_resource.install_karpenter.id
   }
 
   provisioner "local-exec" {
     command = <<-EOT
+      # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       
-      # 等待 CRDs 完全就绪
-      sleep 30
+      # 等待 CRDs 就绪
+      echo "Waiting for Karpenter CRDs to be ready..."
+      for i in {1..10}; do
+        if kubectl get crd provisioners.karpenter.sh >/dev/null 2>&1 && \
+           kubectl get crd awsnodetemplates.karpenter.k8s.aws >/dev/null 2>&1; then
+          echo "Karpenter CRDs are ready!"
+          break
+        else
+          echo "CRDs not ready yet (attempt $i/10)..."
+          if [ $i -eq 10 ]; then
+            echo "CRDs failed to become ready after 10 attempts"
+            exit 1
+          fi
+          sleep 10
+        fi
+      done
+    EOT
+  }
+
+  depends_on = [null_resource.install_karpenter]
+}
+
+# 使用本地执行器来创建 Karpenter 资源
+resource "null_resource" "create_karpenter_resources" {
+  triggers = {
+    crds_ready = null_resource.wait_for_crds.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       
       # 创建 Provisioner
       cat <<EOF | kubectl apply -f -
@@ -213,10 +213,10 @@ resource "null_resource" "create_karpenter_resources" {
     EOT
   }
 
-  depends_on = [null_resource.install_karpenter]
+  depends_on = [null_resource.wait_for_crds]
 }
 
-# 使用 Helm 安装 CoreDNS (更可靠的方法)
+# 使用 Helm 安装 CoreDNS
 resource "null_resource" "install_coredns" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
