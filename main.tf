@@ -228,16 +228,16 @@ resource "null_resource" "install_coredns" {
       # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       
-      # 使用 Helm 安装 CoreDNS
-      helm repo add eks https://aws.github.io/eks-charts
+      # 添加 CoreDNS 官方 Helm 仓库
+      helm repo add coredns https://coredns.github.io/helm
       helm repo update
       
-      helm upgrade --install coredns eks/coredns \
+      # 安装 CoreDNS
+      helm upgrade --install coredns coredns/coredns \
         --namespace kube-system \
         --set serviceAccount.name=coredns \
         --set service.annotations."prometheus\\.io/port"=9153 \
-        --set service.annotations."prometheus\\.io/scrape"=true \
-        --set service.clusterIP=10.100.0.10
+        --set service.annotations."prometheus\\.io/scrape"=true
     EOT
   }
 
