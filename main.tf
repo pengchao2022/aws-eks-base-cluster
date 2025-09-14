@@ -26,10 +26,10 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  # EKS Managed Node Group not used (using Karpenter instead)
+  # 不使用 EKS Managed Node Group (用 Karpenter)
   eks_managed_node_groups = {}
 
-  # Enable IAM Role for Service Account (IRSA)
+  # 启用 IRSA
   enable_irsa = true
 
   # 禁用 CoreDNS 自动安装
@@ -49,7 +49,7 @@ module "eks" {
   }
 }
 
-# 使用 Helm 安装 Karpenter（包含 CRDs）
+# 使用 Helm 安装 Karpenter v1.6.3
 resource "null_resource" "install_karpenter" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
@@ -59,39 +59,29 @@ resource "null_resource" "install_karpenter" {
     command = <<-EOT
       # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
+
       # 创建 Karpenter 命名空间
       kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
-      
-      # 添加和更新 Helm 仓库
+
+      # 添加 Helm 仓库
       helm repo add karpenter https://charts.karpenter.sh
       helm repo update
-      
-      # 安装最新版本的 Karpenter（包含 CRDs）
+
+      # 安装 Karpenter
       helm upgrade --install karpenter karpenter/karpenter \
         --namespace karpenter \
+        --version v1.6.3 \
         --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
         --set clusterName=${var.cluster_name} \
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
         --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
-        --set installCRDs=true  # 确保 CRDs 被安装
-      
-      # 等待 Karpenter 就绪
-      for i in {1..10}; do
-        echo "Waiting for Karpenter to be ready (attempt $i/10)..."
-        if kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=60s; then
-          echo "Karpenter is ready!"
-          break
-        else
-          echo "Karpenter not ready yet, checking pod status..."
-          kubectl get pods -n karpenter
-          if [ $i -eq 10 ]; then
-            echo "Karpenter failed to become ready after 10 attempts"
-            break
-          fi
-          sleep 30
-        fi
-      done
+        --set installCRDs=true
+
+      echo "Waiting for Karpenter deployment to be available..."
+      kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=300s
+
+      echo "Waiting for Karpenter pod to be Ready..."
+      kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=karpenter -n karpenter --timeout=180s
     EOT
   }
 
@@ -106,10 +96,8 @@ resource "null_resource" "wait_for_crds" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
-      # 等待 CRDs 就绪
+
       echo "Waiting for Karpenter CRDs to be ready..."
       for i in {1..10}; do
         if kubectl get crd provisioners.karpenter.sh >/dev/null 2>&1 && \
@@ -131,7 +119,7 @@ resource "null_resource" "wait_for_crds" {
   depends_on = [null_resource.install_karpenter]
 }
 
-# 使用本地执行器来创建 Karpenter 资源
+# 创建 Karpenter 资源
 resource "null_resource" "create_karpenter_resources" {
   triggers = {
     crds_ready = null_resource.wait_for_crds.id
@@ -140,7 +128,7 @@ resource "null_resource" "create_karpenter_resources" {
   provisioner "local-exec" {
     command = <<-EOT
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
+
       # 创建 Provisioner
       cat <<EOF | kubectl apply -f -
       apiVersion: karpenter.sh/v1alpha5
@@ -167,7 +155,7 @@ resource "null_resource" "create_karpenter_resources" {
         consolidation:
           enabled: true
       EOF
-      
+
       # 创建 AWSNodeTemplate
       cat <<EOF | kubectl apply -f -
       apiVersion: karpenter.k8s.aws/v1alpha1
@@ -183,8 +171,8 @@ resource "null_resource" "create_karpenter_resources" {
           karpenter.sh/discovery: ${var.cluster_name}
           Environment: "dev"
       EOF
-      
-      # 创建测试部署
+
+      # 创建测试 Deployment
       cat <<EOF | kubectl apply -f -
       apiVersion: apps/v1
       kind: Deployment
@@ -222,22 +210,17 @@ resource "null_resource" "install_coredns" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      # 等待集群就绪
       sleep 30
-      
-      # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      
-      # 添加 CoreDNS 官方 Helm 仓库
+
       helm repo add coredns https://coredns.github.io/helm
       helm repo update
-      
-      # 安装 CoreDNS
+
       helm upgrade --install coredns coredns/coredns \
         --namespace kube-system \
         --set serviceAccount.name=coredns \
-        --set service.annotations."prometheus\\.io/port"=9153 \
-        --set service.annotations."prometheus\\.io/scrape"=true
+        --set service.annotations."prometheus\\.io/port"="9153" \
+        --set service.annotations."prometheus\\.io/scrape"="true"
     EOT
   }
 
