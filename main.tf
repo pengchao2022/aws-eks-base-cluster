@@ -26,18 +26,22 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  # 不使用 Managed Node Group，由 Karpenter 管理节点
-  eks_managed_node_groups = {}
+  # Managed Node Group，最小 Node 用于调度 Karpenter Pod
+  eks_managed_node_groups = {
+    initial_nodes = {
+      desired_capacity = 1
+      max_capacity     = 1
+      min_capacity     = 1
+      instance_type    = "t3.micro"
+      key_name         = null
+    }
+  }
 
   enable_irsa = true
 
   cluster_addons = {
-    kube-proxy = {
-      most_recent = true
-    }
-    vpc-cni = {
-      most_recent = true
-    }
+    kube-proxy = { most_recent = true }
+    vpc-cni    = { most_recent = true }
   }
 
   tags = {
@@ -67,7 +71,6 @@ resource "null_resource" "install_karpenter" {
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
         --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
         --set installCRDs=true
-      # 等待 Deployment Ready
       for i in {1..20}; do
         if kubectl get deployment karpenter -n karpenter >/dev/null 2>&1; then
           if kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=30s; then
@@ -81,7 +84,7 @@ resource "null_resource" "install_karpenter" {
     EOT
   }
 
-  depends_on = [module.eks, module.karpenter_irsa, aws_iam_instance_profile.karpenter]
+  depends_on = [module.eks]
 }
 
 # 等待 CRDs 就绪
@@ -117,15 +120,6 @@ resource "null_resource" "create_karpenter_resources" {
   provisioner "local-exec" {
     command = <<-EOT
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      # 等待 Karpenter Pod 就绪
-      for i in {1..20}; do
-        if kubectl get pods -n karpenter -l app.kubernetes.io/name=karpenter -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q "Running"; then
-          echo "Karpenter Pod is Running!"
-          break
-        fi
-        echo "Attempt $i/20: Karpenter Pod not ready yet..."
-        sleep 15
-      done
 
       # Provisioner
       cat <<EOF | kubectl apply -f -
@@ -152,7 +146,6 @@ spec:
       cpu: 1000
   consolidation:
     enabled: true
-  replicas: ${var.desired_size}
 EOF
 
       # AWSNodeTemplate
@@ -169,6 +162,31 @@ spec:
   tags:
     karpenter.sh/discovery: ${var.cluster_name}
     Environment: "dev"
+EOF
+
+      # 创建虚拟 Deployment 消耗 CPU，触发 Karpenter 创建 Node
+      cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-filler
+  namespace: default
+spec:
+  replicas: ${var.desired_size}
+  selector:
+    matchLabels:
+      app: node-filler
+  template:
+    metadata:
+      labels:
+        app: node-filler
+    spec:
+      containers:
+      - name: filler
+        image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+        resources:
+          requests:
+            cpu: 1000m
 EOF
     EOT
   }

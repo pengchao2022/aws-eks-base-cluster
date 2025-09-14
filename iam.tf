@@ -1,4 +1,6 @@
+# =========================
 # Karpenter Node IAM Role
+# =========================
 resource "aws_iam_role" "karpenter_node_role" {
   name = "KarpenterNodeRole-${var.cluster_name}"
 
@@ -20,6 +22,7 @@ resource "aws_iam_role" "karpenter_node_role" {
   }
 }
 
+# Attach basic policies for EKS Node
 resource "aws_iam_role_policy_attachment" "karpenter_node_worker_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
   role       = aws_iam_role.karpenter_node_role.name
@@ -40,7 +43,17 @@ resource "aws_iam_role_policy_attachment" "karpenter_node_ssm_policy" {
   role       = aws_iam_role.karpenter_node_role.name
 }
 
-# Karpenter Controller IAM Role
+# =========================
+# EC2 Full Access for Karpenter Node
+# =========================
+resource "aws_iam_role_policy_attachment" "karpenter_node_ec2_full_access" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+  role       = aws_iam_role.karpenter_node_role.name
+}
+
+# =========================
+# Karpenter Controller IAM Role via IRSA
+# =========================
 module "karpenter_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
@@ -65,6 +78,9 @@ module "karpenter_irsa" {
   }
 }
 
+# =========================
+# Karpenter Node Instance Profile
+# =========================
 resource "aws_iam_instance_profile" "karpenter" {
   name = "KarpenterNodeInstanceProfile-${var.cluster_name}"
   role = aws_iam_role.karpenter_node_role.name
