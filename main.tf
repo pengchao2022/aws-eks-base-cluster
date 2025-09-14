@@ -68,7 +68,7 @@ resource "null_resource" "install_karpenter" {
         --set clusterName=${var.cluster_name} \
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
         --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
-        --version 0.32.1
+        --version 0.30.0
     EOT
   }
 
