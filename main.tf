@@ -67,10 +67,9 @@ resource "null_resource" "install_karpenter" {
       helm repo add karpenter https://charts.karpenter.sh
       helm repo update
       
-      # 安装 Karpenter（包含 CRDs）
+      # 安装最新版本的 Karpenter（包含 CRDs）
       helm upgrade --install karpenter karpenter/karpenter \
         --namespace karpenter \
-        --version v0.28.1 \
         --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
         --set clusterName=${var.cluster_name} \
         --set clusterEndpoint=${module.eks.cluster_endpoint} \
@@ -88,7 +87,6 @@ resource "null_resource" "install_karpenter" {
           kubectl get pods -n karpenter
           if [ $i -eq 10 ]; then
             echo "Karpenter failed to become ready after 10 attempts"
-            # 不退出，继续执行，因为 Karpenter 可能在其他资源创建后才会就绪
             break
           fi
           sleep 30
