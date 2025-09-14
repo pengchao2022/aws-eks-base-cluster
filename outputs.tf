@@ -17,3 +17,8 @@ output "karpenter_node_role_arn" {
   description = "Karpenter node IAM role ARN"
   value       = aws_iam_role.karpenter_node_role.arn
 }
+
+output "install_coredns_instructions" {
+  description = "Instructions to install CoreDNS manually"
+  value       = "After cluster is created, install CoreDNS using: aws eks create-addon --cluster-name ${module.eks.cluster_name} --addon-name coredns --region ${var.region}"
+}
