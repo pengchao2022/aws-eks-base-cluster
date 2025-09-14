@@ -26,16 +26,8 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  # Managed Node Group 控制 Node 数量和类型
-  eks_managed_node_groups = {
-    karpenter_nodes = {
-      desired_capacity = var.desired_size
-      max_capacity     = var.desired_size
-      min_capacity     = var.desired_size
-      instance_type    = var.instance_types[0]
-      key_name         = null
-    }
-  }
+  # 不使用 Managed Node Group，由 Karpenter 管理节点
+  eks_managed_node_groups = {}
 
   enable_irsa = true
 
@@ -160,6 +152,7 @@ spec:
       cpu: 1000
   consolidation:
     enabled: true
+  replicas: ${var.desired_size}
 EOF
 
       # AWSNodeTemplate
