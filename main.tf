@@ -32,7 +32,7 @@ module "eks" {
   # Enable IAM Role for Service Account (IRSA)
   enable_irsa = true
 
-  # 只安装必要的插件，禁用 CoreDNS 自动安装
+  # 禁用 CoreDNS 自动安装
   cluster_addons = {
     kube-proxy = {
       most_recent = true
@@ -49,7 +49,7 @@ module "eks" {
   }
 }
 
-# 使用本地执行器来安装 Karpenter，而不是使用 provider 配置
+# 使用 kubectl 安装 Karpenter
 resource "null_resource" "install_karpenter" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
@@ -58,17 +58,17 @@ resource "null_resource" "install_karpenter" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      helm repo add karpenter https://charts.karpenter.sh
-      helm repo update
-      helm upgrade --install karpenter karpenter/karpenter \
-        --namespace karpenter \
-        --create-namespace \
-        --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
-        --set clusterName=${var.cluster_name} \
-        --set clusterEndpoint=${module.eks.cluster_endpoint} \
-        --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name} \
-        --version v0.30.0
+      
+      # 创建 Karpenter 命名空间
+      kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
+      
+      # 安装 Karpenter（使用特定版本）
+      kubectl apply -f https://github.com/aws/karpenter/releases/download/v0.30.0/release.yaml
+      
+      # 等待 Karpenter 就绪
+      kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=karpenter -n karpenter --timeout=300s
     EOT
   }
 
@@ -374,7 +374,7 @@ resource "null_resource" "install_coredns" {
         selector:
           eks.amazonaws.com/component: coredns
           app.kubernetes.io/name: coredns
-          k8s-app: kube-dns
+          k8s-app: karpenter
         clusterIP: 10.100.0.10
         ports:
         - name: dns
