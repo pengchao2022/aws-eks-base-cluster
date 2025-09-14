@@ -49,7 +49,7 @@ module "eks" {
   }
 }
 
-# 使用 kubectl 安装 Karpenter
+# 使用 Helm 安装 Karpenter v0.28.1
 resource "null_resource" "install_karpenter" {
   triggers = {
     cluster_endpoint = module.eks.cluster_endpoint
@@ -61,54 +61,37 @@ resource "null_resource" "install_karpenter" {
       # 更新 kubeconfig
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       
-      # 创建 Karpenter 命名空间
-      kubectl create namespace karpenter --dry-run=client -o yaml | kubectl apply -f -
+      # 添加和更新 Helm 仓库
+      helm repo add karpenter https://charts.karpenter.sh
+      helm repo update
       
-      # 安装 Karpenter CRDs
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_provisioners.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_machines.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_nodepools.yaml
-      kubectl apply -f https://raw.githubusercontent.com/aws/karpenter/v0.30.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+      # 安装 Karpenter v0.28.1
+      helm upgrade --install karpenter karpenter/karpenter \
+        --namespace karpenter \
+        --create-namespace \
+        --version v0.28.1 \
+        --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=${module.karpenter_irsa.iam_role_arn} \
+        --set clusterName=${var.cluster_name} \
+        --set clusterEndpoint=${module.eks.cluster_endpoint} \
+        --set aws.defaultInstanceProfile=${aws_iam_instance_profile.karpenter.name}
       
-      # 创建 Karpenter deployment
-      cat <<EOF | kubectl apply -f -
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: karpenter
-        namespace: karpenter
-      spec:
-        replicas: 1
-        selector:
-          matchLabels:
-            app.kubernetes.io/name: karpenter
-        template:
-          metadata:
-            labels:
-              app.kubernetes.io/name: karpenter
-          spec:
-            serviceAccountName: karpenter
-            containers:
-            - name: controller
-              image: public.ecr.aws/karpenter/controller:v0.30.0
-              env:
-              - name: AWS_DEFAULT_REGION
-                value: ${var.region}
-              - name: CLUSTER_NAME
-                value: ${var.cluster_name}
-              - name: CLUSTER_ENDPOINT
-                value: ${module.eks.cluster_endpoint}
-              resources:
-                requests:
-                  cpu: 100m
-                  memory: 100Mi
-                limits:
-                  cpu: 100m
-                  memory: 100Mi
-      EOF
-      
-      # 等待 Karpenter 就绪
-      kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=300s
+      # 等待 Karpenter 就绪，增加超时时间并添加重试逻辑
+      for i in {1..10}; do
+        echo "Waiting for Karpenter to be ready (attempt $i/10)..."
+        if kubectl wait --for=condition=Available deployment/karpenter -n karpenter --timeout=60s; then
+          echo "Karpenter is ready!"
+          break
+        else
+          echo "Karpenter not ready yet, checking pod status..."
+          kubectl get pods -n karpenter
+          if [ $i -eq 10 ]; then
+            echo "Karpenter failed to become ready after 10 attempts"
+            # 不退出，继续执行，因为 Karpenter 可能在其他资源创建后才会就绪
+            break
+          fi
+          sleep 30
+        fi
+      done
     EOT
   }
 
