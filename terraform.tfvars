@@ -1,5 +1,5 @@
 region          = "us-east-1"
-cluster_name    = "spring-eks-cluster"
+cluster_name    = "flask-eks-cluster"
 cluster_version = "1.28"
 vpc_id          = "vpc-0c6781da1e3098582"
 private_subnet_ids = [
