@@ -1,13 +1,13 @@
-region          = "us-east-1"
-cluster_name    = "flask-eks-cluster"
-cluster_version = "1.28"
-vpc_id          = "vpc-0c6781da1e3098582"
+region       = "us-east-1"
+cluster_name = "spring-eks-cluster"
+vpc_id       = "vpc-0dc967abca0d7d131"
 private_subnet_ids = [
-  "subnet-05d4e1497d4c92999",
-  "subnet-044e65ebeca04ffc7",
-  "subnet-0d5abc2715e416f7a",
+  "subnet-0f2411b92105fbda0",
+  "subnet-03da79fc5ec691939",
+  "subnet-05f5e7f1a3af64705",
 ]
-
-desired_size   = 4
-instance_types = ["t3.micro"]
-
+eks_version        = "1.28"
+node_instance_type = "t3.micro"
+desired_size       = 4
+max_size           = 4
+min_size           = 4

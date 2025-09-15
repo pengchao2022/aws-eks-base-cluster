@@ -1,29 +1,35 @@
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
+}
+
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "eks-karpenter-cluster"
+  default     = "my-eks-cluster"
 }
 
-variable "cluster_version" {
+variable "vpc_id" {
+  description = "Existing VPC ID"
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "List of existing private subnet IDs"
+  type        = list(string)
+}
+
+variable "eks_version" {
   description = "EKS cluster version"
   type        = string
   default     = "1.28"
 }
 
-variable "vpc_id" {
-  description = "VPC ID where EKS will be deployed"
+variable "node_instance_type" {
+  description = "EC2 instance type for worker nodes"
   type        = string
-}
-
-variable "private_subnet_ids" {
-  description = "List of private subnet IDs"
-  type        = list(string)
-}
-
-variable "instance_types" {
-  description = "Instance types for Karpenter nodes"
-  type        = list(string)
-  default     = ["t3.micro"]
+  default     = "t3.micro"
 }
 
 variable "desired_size" {
@@ -32,8 +38,14 @@ variable "desired_size" {
   default     = 4
 }
 
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
+variable "max_size" {
+  description = "Maximum number of worker nodes"
+  type        = number
+  default     = 4
+}
+
+variable "min_size" {
+  description = "Minimum number of worker nodes"
+  type        = number
+  default     = 4
 }

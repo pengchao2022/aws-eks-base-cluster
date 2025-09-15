@@ -1,6 +1,6 @@
-output "cluster_name" {
-  description = "EKS cluster name"
-  value       = module.eks.cluster_name
+output "cluster_id" {
+  description = "EKS cluster ID"
+  value       = module.eks.cluster_id
 }
 
 output "cluster_endpoint" {
@@ -13,12 +13,17 @@ output "cluster_security_group_id" {
   value       = module.eks.cluster_security_group_id
 }
 
-output "karpenter_node_role_arn" {
-  description = "Karpenter node IAM role ARN"
-  value       = aws_iam_role.karpenter_node_role.arn
+output "node_security_group_id" {
+  description = "Security group ids attached to the worker nodes"
+  value       = module.eks.node_security_group_id
 }
 
-output "install_coredns_instructions" {
-  description = "Instructions to install CoreDNS manually"
-  value       = "After cluster is created, install CoreDNS using: aws eks create-addon --cluster-name ${module.eks.cluster_name} --addon-name coredns --region ${var.region}"
+output "cluster_certificate_authority_data" {
+  description = "Base64 encoded certificate data required to communicate with the cluster"
+  value       = module.eks.cluster_certificate_authority_data
+}
+
+output "cluster_oidc_issuer_url" {
+  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
+  value       = module.eks.cluster_oidc_issuer_url
 }

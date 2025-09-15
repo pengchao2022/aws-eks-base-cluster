@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
     bucket         = "terraformstatefile090909"
-    key            = "aws_flask_eks_karpenter_dev_terraform.tfstate"
+    key            = "spring_aws_terraform_1.tfstate"
     region         = "us-east-1"
     dynamodb_table = "terraform-locks"
     encrypt        = true
