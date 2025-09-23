@@ -27,5 +27,12 @@ max_size           = 8
 min_size           = 3
 
 ```
+## Notice
+
+- use aws cli to update kube-config when terraform finished
+```shell
+aws eks update-kubeconfig --region <region-code> --name <cluster-name>
+
+```
 
 
